@@ -39,6 +39,7 @@ export {
     type MerkleProof,
     type StateQueryResult,
     type StateStore,
+    type AsyncStateStore,
     createStateKey,
     encodeStateKey,
     compareStateKeys,

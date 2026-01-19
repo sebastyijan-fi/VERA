@@ -100,7 +100,7 @@ describe('Virtual Machine', () => {
         });
     }
 
-    it('executes simple let statement', () => {
+    it('executes simple let statement', async () => {
         const source = `
 module Test
 transaction Foo() {
@@ -112,13 +112,13 @@ transaction Foo() {
         const gas = new GasMeter(100000n);
         const context = createTestContext();
 
-        const result = vm.execute('Foo', [], context, gas);
+        const result = await vm.execute('Foo', [], context, gas);
 
         expect(result.success).toBe(true);
         expect(result.gasUsed).toBeGreaterThan(0n);
     });
 
-    it('executes arithmetic', () => {
+    it('executes arithmetic', async () => {
         const source = `
 module Test
 transaction Add() {
@@ -132,12 +132,12 @@ transaction Add() {
         const gas = new GasMeter(100000n);
         const context = createTestContext();
 
-        const result = vm.execute('Add', [], context, gas);
+        const result = await vm.execute('Add', [], context, gas);
 
         expect(result.success).toBe(true);
     });
 
-    it('executes require with passing condition', () => {
+    it('executes require with passing condition', async () => {
         const source = `
 module Test
 transaction Check() {
@@ -150,12 +150,12 @@ transaction Check() {
         const gas = new GasMeter(100000n);
         const context = createTestContext();
 
-        const result = vm.execute('Check', [], context, gas);
+        const result = await vm.execute('Check', [], context, gas);
 
         expect(result.success).toBe(true);
     });
 
-    it('fails on require with failing condition', () => {
+    it('fails on require with failing condition', async () => {
         const source = `
 module Test
 transaction Check() {
@@ -168,13 +168,13 @@ transaction Check() {
         const gas = new GasMeter(100000n);
         const context = createTestContext();
 
-        const result = vm.execute('Check', [], context, gas);
+        const result = await vm.execute('Check', [], context, gas);
 
         expect(result.success).toBe(false);
         expect(result.error?.message).toContain('Must be positive');
     });
 
-    it('handles context expressions', () => {
+    it('handles context expressions', async () => {
         const source = `
 module Test
 transaction GetCaller() {
@@ -186,12 +186,12 @@ transaction GetCaller() {
         const gas = new GasMeter(100000n);
         const context = createTestContext();
 
-        const result = vm.execute('GetCaller', [], context, gas);
+        const result = await vm.execute('GetCaller', [], context, gas);
 
         expect(result.success).toBe(true);
     });
 
-    it('emits events', () => {
+    it('emits events', async () => {
         const source = `
 module Test
 transaction EmitTest() {
@@ -209,7 +209,7 @@ transaction EmitTest() {
             events,
         });
 
-        vm.execute('EmitTest', [], context, gas);
+        await vm.execute('EmitTest', [], context, gas);
 
         expect(events.count).toBe(1);
         expect(events.getEvents()[0]!.name).toBe('Transfer');

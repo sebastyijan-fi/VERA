@@ -70,7 +70,7 @@ transaction Main() {
                 events
             });
 
-            const result = vm.execute('Main', [], context, gas);
+            const result = await vm.execute('Main', [], context, gas);
 
             if (result.success) {
                 // If there is a return value (on stack or returned), display it.

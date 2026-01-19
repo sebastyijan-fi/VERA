@@ -31,22 +31,22 @@ export interface StateAccessor {
     /**
      * Gets a value from state
      */
-    get(entityType: string, key: Value): Value | undefined;
+    get(entityType: string, key: Value): Promise<Value | undefined>;
 
     /**
      * Sets a value in state
      */
-    set(entityType: string, key: Value, value: Value): void;
+    set(entityType: string, key: Value, value: Value): Promise<void>;
 
     /**
      * Deletes a value from state
      */
-    delete(entityType: string, key: Value): void;
+    delete(entityType: string, key: Value): Promise<void>;
 
     /**
      * Checks if a key exists
      */
-    exists(entityType: string, key: Value): boolean;
+    exists(entityType: string, key: Value): Promise<boolean>;
 }
 
 // ============================================================================
@@ -96,7 +96,7 @@ export function createExecutionContext(options: ExecutionContextOptions): Execut
         contractAddress: options.contractAddress ?? '0x0000000000000000000000000000000000000000',
         block: {
             height: options.block?.height ?? 0n,
-            timestamp: options.block?.timestamp ?? BigInt(Math.floor(Date.now() / 1000)),
+            timestamp: options.block?.timestamp ?? 0n,
             parentHash: options.block?.parentHash ?? '0x0000000000000000000000000000000000000000000000000000000000000000',
         },
         state: options.state,

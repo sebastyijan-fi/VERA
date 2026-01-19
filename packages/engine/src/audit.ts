@@ -53,6 +53,14 @@ export interface AuditLog {
 }
 
 // ============================================================================
+// Clock Interface
+// ============================================================================
+
+export interface Clock {
+    now(): number;
+}
+
+// ============================================================================
 // Audit Logger
 // ============================================================================
 
@@ -64,13 +72,18 @@ export class AuditLogger {
     private startTime = 0;
     private functionName = '';
     private txHash?: string | undefined;
+    private readonly clock: Clock;
+
+    constructor(clock?: Clock) {
+        this.clock = clock ?? { now: () => Date.now() };
+    }
 
     /**
      * Starts logging for a function
      */
     start(functionName: string, txHash?: string | undefined): void {
         this.entries = [];
-        this.startTime = Date.now();
+        this.startTime = this.clock.now();
         this.functionName = functionName;
         this.txHash = txHash;
     }
@@ -90,7 +103,7 @@ export class AuditLogger {
             opcode,
             gasUsed,
             stackDepth,
-            timestamp: Date.now(),
+            timestamp: this.clock.now(),
         };
         if (operand !== undefined) {
             entry.operand = this.formatOperand(operand);
@@ -107,7 +120,7 @@ export class AuditLogger {
             entries: this.entries,
             totalGas,
             startTime: this.startTime,
-            endTime: Date.now(),
+            endTime: this.clock.now(),
             success,
         };
         if (this.txHash !== undefined) {
@@ -136,6 +149,6 @@ export class AuditLogger {
 /**
  * Creates a new audit logger
  */
-export function createAuditLogger(): AuditLogger {
-    return new AuditLogger();
+export function createAuditLogger(clock?: Clock): AuditLogger {
+    return new AuditLogger(clock);
 }

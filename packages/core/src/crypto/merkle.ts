@@ -16,7 +16,7 @@ import {
     EMPTY_TREE_ROOT,
     hashMerkleInternal,
     hashMerkleLeaf,
-    sha256,
+    hashStateValue,
 } from './hash.js';
 
 // ============================================================================
@@ -233,7 +233,7 @@ export class MerkleTree {
 
         // Create leaf nodes
         const leaves: MerkleNode[] = sortedEntries.map((entry) =>
-            createLeafNode(entry.key, sha256(entry.value))
+            createLeafNode(entry.key, hashStateValue(entry.value))
         );
 
         // Build tree bottom-up
@@ -281,7 +281,7 @@ export class MerkleTree {
 
         // Build tree and collect siblings along the path
         const leaves: MerkleNode[] = sortedEntries.map((entry) =>
-            createLeafNode(entry.key, sha256(entry.value))
+            createLeafNode(entry.key, hashStateValue(entry.value))
         );
 
         return this.collectSiblings(leaves, targetIndex);
@@ -347,7 +347,7 @@ export function verifyMerkleProof(proof: MerkleProof): boolean {
     }
 
     // Compute leaf hash
-    const valueHash = sha256(proof.value);
+    const valueHash = hashStateValue(proof.value);
     currentHash = hashMerkleLeaf(proof.key, valueHash);
 
     // Walk up the tree using siblings
@@ -369,7 +369,7 @@ export function computeRootWithValue(
     proof: MerkleProof,
     newValue: Bytes
 ): Bytes32 {
-    const valueHash = sha256(newValue);
+    const valueHash = hashStateValue(newValue);
     let currentHash = hashMerkleLeaf(proof.key, valueHash);
 
     for (const sibling of proof.siblings) {

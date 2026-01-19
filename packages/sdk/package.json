@@ -1,8 +1,8 @@
 {
-    "name": "@vera/store",
+    "name": "@vera/sdk",
     "version": "0.1.0",
     "type": "module",
-    "description": "VERA Data Persistence Layer",
+    "description": "VERA TypeScript SDK",
     "exports": {
         ".": {
             "import": "./dist/index.js",
@@ -13,18 +13,12 @@
         "build": "tsup",
         "dev": "tsup --watch",
         "test": "vitest run",
-        "test:watch": "vitest",
-        "test:coverage": "vitest run --coverage",
-        "lint": "eslint src",
-        "typecheck": "tsc --noEmit"
+        "test:watch": "vitest"
     },
     "dependencies": {
-        "@vera/core": "workspace:*",
-        "cbor-x": "^1.6.0",
-        "classic-level": "^3.0.0"
+        "@vera/core": "workspace:*"
     },
     "devDependencies": {
-        "@types/node": "^20.0.0",
         "tsup": "^8.0.0",
         "typescript": "^5.3.0",
         "vitest": "^3.0.0"

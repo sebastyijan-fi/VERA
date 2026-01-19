@@ -49,6 +49,8 @@ export interface Signature {
 export interface Transaction {
     /** Protocol version */
     readonly version: number;
+    /** Chain ID for replay protection */
+    readonly chainId: Bytes32;
     /** Reference to the transaction type definition */
     readonly type: TransactionTypeRef;
     /** Replay protection nonce (unique per sender) */

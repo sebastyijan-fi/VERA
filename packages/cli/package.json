@@ -15,6 +15,7 @@
         "@vera/core": "workspace:*",
         "@vera/dsl": "workspace:*",
         "@vera/engine": "workspace:*",
+        "@vera/ordering": "workspace:*",
         "@vera/store": "workspace:*",
         "cac": "^6.7.14",
         "picocolors": "^1.0.0"

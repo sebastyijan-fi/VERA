@@ -36,17 +36,36 @@ export class StateJournal implements StateAccessor {
     /**
      * Gets a value from state
      */
-    get(entityType: string, key: Value): Value | undefined {
+    async get(entityType: string, key: Value): Promise<Value | undefined> {
         const keyStr = this.keyToString(key);
+        // Check journal first (reverse order)
+        for (let i = this.journal.length - 1; i >= 0; i--) {
+            const entry = this.journal[i];
+            if (entry && entry.entityType === entityType && entry.key === keyStr) {
+                if (entry.type === 'set') {
+                    // Type guard ensures entry is 'set' type here, which has 'value'
+                    return (entry as { value: Value }).value;
+                } else {
+                    return undefined; // Deleted
+                }
+            }
+        }
+        // Fallback to underlying
         return this.underlying.get(entityType)?.get(keyStr);
     }
 
     /**
      * Sets a value in state
      */
-    set(entityType: string, key: Value, value: Value): void {
+    async set(entityType: string, key: Value, value: Value): Promise<void> {
         const keyStr = this.keyToString(key);
-        const previousValue = this.get(entityType, key);
+        // We need the previous value for rollback, which must be fetched async now if needed.
+        // Optimization: if we are in a transaction, get() checks journal mostly.
+        const previousValue = await this.get(entityType, key);
+
+        // We do NOT update 'underlying' immediately in a journaled approach?
+        // The original code updated 'underlying' AND pushed to journal.
+        // Let's keep the original logic but make it async compatible.
 
         let entityMap = this.underlying.get(entityType);
         if (!entityMap) {
@@ -70,9 +89,9 @@ export class StateJournal implements StateAccessor {
     /**
      * Deletes a value from state
      */
-    delete(entityType: string, key: Value): void {
+    async delete(entityType: string, key: Value): Promise<void> {
         const keyStr = this.keyToString(key);
-        const previousValue = this.get(entityType, key);
+        const previousValue = await this.get(entityType, key);
 
         this.underlying.get(entityType)?.delete(keyStr);
 
@@ -90,9 +109,9 @@ export class StateJournal implements StateAccessor {
     /**
      * Checks if a key exists
      */
-    exists(entityType: string, key: Value): boolean {
-        const keyStr = this.keyToString(key);
-        return this.underlying.get(entityType)?.has(keyStr) ?? false;
+    async exists(entityType: string, key: Value): Promise<boolean> {
+        const value = await this.get(entityType, key);
+        return value !== undefined;
     }
 
     /**

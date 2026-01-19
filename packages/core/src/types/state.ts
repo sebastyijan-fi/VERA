@@ -159,6 +159,54 @@ export interface StateStore {
     size(): number;
 }
 
+/**
+ * Async state store interface for disk-based storage.
+ * All access methods return Promises.
+ */
+export interface AsyncStateStore {
+    /** Monotonically increasing version number */
+    readonly version: bigint;
+
+    /** Merkle root commitment of the entire state */
+    readonly root: Bytes32;
+
+    /**
+     * Gets a value by key
+     */
+    get(key: StateKey): Promise<StateValue | null>;
+
+    /**
+     * Gets a value with a Merkle proof
+     */
+    getWithProof(key: StateKey): Promise<StateQueryResult>;
+
+    /**
+     * Checks if a key exists in state
+     */
+    has(key: StateKey): Promise<boolean>;
+
+    /**
+     * Applies a batch of changes atomically.
+     * Returns a new AsyncStateStore instance representing the new state.
+     */
+    apply(changes: readonly StateChange[], newVersion: bigint): Promise<AsyncStateStore>;
+
+    /**
+     * Gets all keys in a namespace (for iteration)
+     */
+    keys(namespace: string): AsyncIterableIterator<StateKey>;
+
+    /**
+     * Iterates over all entries (for snapshotting)
+     */
+    entries(): AsyncIterableIterator<{ key: StateKey; value: StateValue }>;
+
+    /**
+     * Gets the number of entries in state
+     */
+    size(): Promise<number>;
+}
+
 // ============================================================================
 // State Key Utilities
 // ============================================================================

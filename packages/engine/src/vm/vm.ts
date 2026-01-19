@@ -19,7 +19,7 @@ import {
     isTruthy,
 } from './value.js';
 import { Stack, CallStack } from './stack.js';
-import type { GasMeter } from '../gas/gas.js';
+import { GasMeter, OutOfGasError } from '../gas/gas.js';
 import type { ExecutionContext } from '../state/context.js';
 
 // ============================================================================
@@ -85,17 +85,23 @@ export class VirtualMachine {
     /**
      * Executes a function by name
      */
-    execute(
-        functionName: string,
-        args: Value[],
+    async execute(
+        entryPoint: string,
+        args: Value[] = [],
         context: ExecutionContext,
         gas: GasMeter
-    ): VMResult {
-        const func = this.program.functions.find(f => f.name === functionName);
+    ): Promise<VMResult> {
+        // The provided snippet for `execute` and `step` seems to be from a different version
+        // of the VM with different state management (e.g., `this.stack` as array, `this.frames`,
+        // `this.context`, `this.gas` as class properties, `ExecutionResult` type, `createError` method).
+        // To make this change syntactically correct and functional within the existing VM structure,
+        // I will adapt the provided async structure to the current VM's state and methods.
+
+        const func = this.program.functions.find(f => f.name === entryPoint);
         if (!func) {
             return {
                 success: false,
-                error: new VMError(`Function not found: ${functionName}`),
+                error: new VMError(`Function not found: ${entryPoint}`),
                 gasUsed: 0n,
                 instructionsExecuted: 0,
             };
@@ -118,7 +124,7 @@ export class VirtualMachine {
         }
 
         this.callStack.push({
-            functionName,
+            functionName: entryPoint,
             returnAddress: 0,
             basePointer: 0,
             locals,
@@ -126,14 +132,10 @@ export class VirtualMachine {
 
         try {
             while (!this.halted && this.pc < func.instructions.length) {
-                const instruction = func.instructions[this.pc]!;
-
                 // Check gas before executing
-                gas.consume(this.getOpcodeCost(instruction.opcode));
+                gas.consume(this.getOpcodeCost(func.instructions[this.pc]!.opcode));
 
-                this.executeInstruction(instruction, context, gas);
-                this.instructionsExecuted++;
-                this.pc++;
+                await this.step(func, context, gas); // Call the new async step method
             }
 
             const result: VMResult = {
@@ -146,6 +148,9 @@ export class VirtualMachine {
             }
             return result;
         } catch (e) {
+            if (e instanceof OutOfGasError) {
+                throw e;
+            }
             if (e instanceof VMError) {
                 return {
                     success: false,
@@ -168,11 +173,25 @@ export class VirtualMachine {
         }
     }
 
-    private executeInstruction(
+    private async step(func: IRFunction, context: ExecutionContext, gas: GasMeter): Promise<void> {
+        const instruction = func.instructions[this.pc]!;
+        // gas copy is handled in loop now? No, loop calls step.
+        // But loop also had gas check.
+        // Actually the loop in execute calls:
+        // gas.consume(...)
+        // await this.step(...)
+        // So step is responsible for execution only.
+
+        await this.executeInstruction(instruction, context, gas);
+        this.instructionsExecuted++;
+        this.pc++;
+    }
+
+    private async executeInstruction(
         instruction: IRInstruction,
         context: ExecutionContext,
-        _gas: GasMeter
-    ): void {
+        gas: GasMeter
+    ): Promise<void> {
         const { opcode, operand } = instruction;
 
         switch (opcode) {
@@ -326,11 +345,11 @@ export class VirtualMachine {
             // Control flow
             case IROpcode.JMP: {
                 const label = operand as string;
-                const target = this.labelMap.get(label);
+                const target = this.labelMap.get(label.startsWith('@') ? label.slice(1) : label);
                 if (target === undefined) {
                     throw new VMError(`Unknown label: ${label}`, this.pc, 'JMP');
                 }
-                this.pc = target - 1; // -1 because pc++ happens after
+                this.pc = target - 1;
                 break;
             }
 
@@ -338,7 +357,7 @@ export class VirtualMachine {
                 const condition = this.stack.pop();
                 if (isTruthy(condition)) {
                     const label = operand as string;
-                    const target = this.labelMap.get(label);
+                    const target = this.labelMap.get(label.startsWith('@') ? label.slice(1) : label);
                     if (target === undefined) {
                         throw new VMError(`Unknown label: ${label}`, this.pc, 'JMP_IF');
                     }
@@ -351,7 +370,7 @@ export class VirtualMachine {
                 const condition = this.stack.pop();
                 if (!isTruthy(condition)) {
                     const label = operand as string;
-                    const target = this.labelMap.get(label);
+                    const target = this.labelMap.get(label.startsWith('@') ? label.slice(1) : label);
                     if (target === undefined) {
                         throw new VMError(`Unknown label: ${label}`, this.pc, 'JMP_IF_NOT');
                     }
@@ -366,8 +385,26 @@ export class VirtualMachine {
                 if (!targetFunc) {
                     throw new VMError(`Function not found: ${funcName}`, this.pc, 'CALL');
                 }
-                // For now, just push a placeholder - full implementation needs nested execution
-                this.stack.push(nullValue());
+
+                const argCount = targetFunc.params.length;
+                const args: Value[] = [];
+                for (let i = 0; i < argCount; i++) {
+                    args.unshift(this.stack.pop());
+                }
+
+                // Recursive async call
+                const result = await this.execute(funcName, args, context, gas);
+                if (!result.success) {
+                    // Propagate error with location info
+                    if (result.error) {
+                        throw result.error; // Already a VMError
+                    }
+                    throw new VMError('Call failed', this.pc, 'CALL');
+                }
+
+                if (result.returnValue) {
+                    this.stack.push(result.returnValue);
+                }
                 break;
             }
 
@@ -399,35 +436,35 @@ export class VirtualMachine {
                 this.stack.push(addressValue(context.contractAddress));
                 break;
 
-            // State
+            // State (ASYNC)
             case IROpcode.STATE_GET: {
                 const entityType = operand as string;
                 const key = this.stack.pop();
-                const value = context.state.get(entityType, key);
+                const value = await context.state.get(entityType, key);
                 this.stack.push(value ?? nullValue());
                 break;
             }
 
             case IROpcode.STATE_SET: {
                 const entityType = operand as string;
-                const key = this.stack.peekAt(1);
+                // Value is top, Key is below
                 const value = this.stack.pop();
-                this.stack.pop(); // pop the key too
-                context.state.set(entityType, key, value);
+                const key = this.stack.pop();
+                await context.state.set(entityType, key, value);
                 break;
             }
 
             case IROpcode.STATE_DEL: {
                 const entityType = operand as string;
                 const key = this.stack.pop();
-                context.state.delete(entityType, key);
+                await context.state.delete(entityType, key);
                 break;
             }
 
             case IROpcode.STATE_EXISTS: {
                 const entityType = operand as string;
                 const key = this.stack.pop();
-                const exists = context.state.exists(entityType, key);
+                const exists = await context.state.exists(entityType, key);
                 this.stack.push(boolValue(exists));
                 break;
             }
@@ -630,12 +667,28 @@ export class VirtualMachine {
         switch (value.kind) {
             case 'int':
                 return `i:${value.value}`;
+            case 'bool':
+                return `b:${value.value ? '1' : '0'}`;
             case 'string':
                 return `s:${value.value}`;
             case 'address':
                 return `a:${value.value}`;
+            case 'bytes':
+                return `x:${Array.from(value.value).map(b => b.toString(16).padStart(2, '0')).join('')}`;
+            case 'null':
+                return 'n:';
+            case 'list':
+                return `l:[${value.elements.map(e => this.valueToKey(e)).join(',')}]`;
+            case 'map': {
+                const keys = Array.from(value.entries.keys()).sort();
+                return `m:{${keys.map(k => `${k}=${this.valueToKey(value.entries.get(k)!)}`).join(',')}}`;
+            }
+            case 'struct': {
+                const keys = Array.from(value.fields.keys()).sort();
+                return `S:${value.type}{${keys.map(k => `${k}=${this.valueToKey(value.fields.get(k)!)}`).join(',')}}`;
+            }
             default:
-                return `o:${JSON.stringify(value)}`;
+                throw new VMError(`Unsupported key type: ${(value as any).kind}`, this.pc);
         }
     }
 

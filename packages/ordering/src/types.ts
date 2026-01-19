@@ -30,12 +30,16 @@ export type FinalityState = 'pending' | 'sequenced' | 'finalized';
 export interface RawTransaction {
     /** Transaction hash */
     hash: Bytes32;
+    /** Chain identifier */
+    chainId: Bytes32;
     /** Sender address */
     sender: Address;
     /** Target function */
     function: string;
     /** Encoded arguments */
     args: Uint8Array;
+    /** Transaction nonce */
+    nonce: bigint;
     /** Signature */
     signature: Uint8Array;
     /** Timestamp when submitted */
@@ -135,17 +139,22 @@ export interface Subscription {
  */
 export function createRawTransaction(
     hash: Bytes32,
+    chainId: Bytes32,
     sender: Address,
     func: string,
     args: Uint8Array,
-    signature: Uint8Array
+    nonce: bigint,
+    signature: Uint8Array,
+    submittedAt: bigint = BigInt(Date.now())
 ): RawTransaction {
     return {
         hash,
+        chainId,
         sender,
         function: func,
         args,
+        nonce,
         signature,
-        submittedAt: BigInt(Date.now()),
+        submittedAt,
     };
 }

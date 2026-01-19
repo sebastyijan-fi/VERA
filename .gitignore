@@ -31,3 +31,8 @@ pnpm-debug.log*
 # Temp
 tmp/
 .tmp/
+
+# Databases and test data
+test-data/
+*.db/
+.vera/

@@ -75,7 +75,7 @@ export async function run(file: string, options: { entry?: string, args?: string
         });
 
         const start = performance.now();
-        const result = vm.execute(entryPoint, args, context, gas);
+        const result = await vm.execute(entryPoint, args, context, gas);
         const duration = (performance.now() - start).toFixed(2);
 
         if (result.success) {

@@ -42,6 +42,13 @@ export interface IteratorOptions {
     limit?: number | undefined;
 }
 
+/**
+ * Time source interface
+ */
+export interface Clock {
+    now(): number;
+}
+
 // ============================================================================
 // Store Interface
 // ============================================================================

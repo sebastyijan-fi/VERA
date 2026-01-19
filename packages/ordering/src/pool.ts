@@ -7,6 +7,8 @@
 
 import type { Bytes32 } from '@vera/core';
 import type { RawTransaction } from './types.js';
+import type { Clock } from './clock.js';
+import { SystemClock } from './clock.js';
 
 // ============================================================================
 // Pool Configuration
@@ -19,6 +21,8 @@ export interface PoolConfig {
     maxAge?: number | undefined;
     /** Enable priority ordering */
     priorityEnabled?: boolean | undefined;
+    /** Time source */
+    clock?: Clock | undefined;
 }
 
 // ============================================================================
@@ -32,11 +36,13 @@ export class TransactionPool {
     private readonly pending: Map<string, RawTransaction> = new Map();
     private readonly maxSize: number;
     private readonly maxAge: number;
+    private readonly clock: Clock;
     private evictionTimer: NodeJS.Timeout | null = null;
 
     constructor(config: PoolConfig = {}) {
         this.maxSize = config.maxSize ?? 10000;
         this.maxAge = config.maxAge ?? 60 * 60 * 1000; // 1 hour
+        this.clock = config.clock ?? new SystemClock();
     }
 
     /**
@@ -169,7 +175,7 @@ export class TransactionPool {
      * Evicts expired transactions
      */
     evictExpired(): number {
-        const now = BigInt(Date.now());
+        const now = BigInt(this.clock.now());
         const maxAgeVal = BigInt(this.maxAge);
         let evicted = 0;
 

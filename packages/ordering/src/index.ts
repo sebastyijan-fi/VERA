@@ -46,3 +46,10 @@ export {
     createFinalityTracker,
     type FinalityConfig,
 } from './finality.js';
+
+// Clock
+export {
+    type Clock,
+    SystemClock,
+    FixedClock,
+} from './clock.js';

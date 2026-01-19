@@ -30,8 +30,15 @@ cli
         }
     });
 
-cli
-    .command('run <file>', 'Run a VERA script')
+cli.command('node', 'Start a VERA blockchain node')
+    .option('--data-dir <dir>', 'Directory to store chain data', { default: './data' })
+    .option('--port <port>', 'Port for RPC server', { default: 8545 })
+    .action(async (options) => {
+        const { node } = await import('./commands/node.js');
+        node(options);
+    });
+
+cli.command('run <file>', 'Execute a VERA script')
     .option('--entry <name>', 'Entry point function', { default: 'init' })
     .option('--args <args>', 'Arguments (comma separated)', { type: [String] })
     // cac arrays options behavior might vary. Simple string parsing in run.ts might be safer or use variadic args?

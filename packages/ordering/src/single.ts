@@ -1,10 +1,11 @@
-/**
- * VERA SingleSequencer
- *
- * Single-node in-memory sequencer for development.
- * Provides immediate finality with FIFO ordering.
- */
-
+import {
+    type Bytes32,
+    bytesEqual,
+    bytesToHex,
+    toBytes64,
+    zeroBytes32,
+    verifyTransactionSignature,
+} from '@vera/core';
 import type {
     RawTransaction,
     OrderedTransaction,
@@ -16,8 +17,11 @@ import type {
     Subscription,
 } from './types.js';
 import type { Sequencer } from './sequencer.js';
+import type { Store } from '@vera/store';
 import { TransactionPool, type PoolConfig } from './pool.js';
 import { FinalityTracker, type FinalityConfig } from './finality.js';
+import type { Clock } from './clock.js';
+import { SystemClock } from './clock.js';
 
 // ============================================================================
 // SingleSequencer Configuration
@@ -26,10 +30,16 @@ import { FinalityTracker, type FinalityConfig } from './finality.js';
 export interface SingleSequencerConfig {
     /** Sequencer identifier */
     id?: string | undefined;
+    /** Chain identifier */
+    chainId?: Bytes32 | undefined;
     /** Pool configuration */
     pool?: PoolConfig | undefined;
     /** Finality configuration */
     finality?: FinalityConfig | undefined;
+    /** Persistence backend */
+    store?: Store | undefined;
+    /** Time source */
+    clock?: Clock | undefined;
 }
 
 // ============================================================================
@@ -41,17 +51,26 @@ export interface SingleSequencerConfig {
  */
 export class SingleSequencer implements Sequencer {
     private readonly id: string;
+    private readonly chainId: Bytes32;
     private readonly pool: TransactionPool;
     private readonly finality: FinalityTracker;
+    private readonly store?: Store;
+    private readonly clock: Clock;
     private readonly sequenced: Map<string, OrderedTransaction> = new Map();
     private readonly txCallbacks: Set<TransactionCallback> = new Set();
+    private readonly nonces: Map<string, bigint> = new Map();
     private nextSequence: SequenceNumber = 1n;
     private isActive = false;
 
     constructor(config: SingleSequencerConfig = {}) {
         this.id = config.id ?? 'single-sequencer';
+        this.chainId = config.chainId ?? zeroBytes32();
         this.pool = new TransactionPool(config.pool);
         this.finality = new FinalityTracker(config.finality);
+        this.clock = config.clock ?? new SystemClock();
+        if (config.store) {
+            this.store = config.store;
+        }
     }
 
     async submit(tx: RawTransaction): Promise<SubmitResult> {
@@ -63,7 +82,49 @@ export class SingleSequencer implements Sequencer {
             };
         }
 
-        // Check for duplicate
+        // 1. Verify Chain ID
+        if (!bytesEqual(tx.chainId, this.chainId)) {
+            return {
+                accepted: false,
+                hash: tx.hash,
+                error: `Invalid chain ID: expected ${bytesToHex(this.chainId)}, got ${bytesToHex(tx.chainId)}`,
+            };
+        }
+
+        // 2. Verify Signature
+        const signature = {
+            publicKey: tx.sender,
+            signature: toBytes64(tx.signature),
+            signedFields: ['version', 'chainId', 'type', 'nonce', 'maxSequence', 'payload'], // Default canonical fields
+        };
+
+        if (!verifyTransactionSignature(signature, tx.hash)) {
+            return {
+                accepted: false,
+                hash: tx.hash,
+                error: 'Invalid signature',
+            };
+        }
+
+        // 3. Verify Nonce
+        const senderKey = bytesToHex(tx.sender);
+        const currentNonce = this.nonces.get(senderKey) ?? 0n;
+        if (tx.nonce <= currentNonce) {
+            return {
+                accepted: false,
+                hash: tx.hash,
+                error: `Nonce too low: current ${currentNonce}, got ${tx.nonce}`,
+            };
+        }
+        if (tx.nonce > currentNonce + 1n) {
+            return {
+                accepted: false,
+                hash: tx.hash,
+                error: `Nonce too high (gap): current ${currentNonce}, expected ${currentNonce + 1n}, got ${tx.nonce}`,
+            };
+        }
+
+        // Check for duplicate hash
         const hashKey = this.hashToKey(tx.hash);
         if (this.sequenced.has(hashKey) || this.pool.has(tx.hash)) {
             return {
@@ -81,6 +142,9 @@ export class SingleSequencer implements Sequencer {
                 error: 'Pool full',
             };
         }
+
+        // 4. Update Nonce
+        this.nonces.set(senderKey, tx.nonce);
 
         // Immediately sequence (single sequencer mode)
         const ordered = this.sequenceTransaction(tx);
@@ -123,7 +187,7 @@ export class SingleSequencer implements Sequencer {
         return {
             sequencer: {
                 id: this.id,
-                address: new Uint8Array(20) as any, // Placeholder
+                address: zeroBytes32() as any,
                 isActive: this.isActive,
                 lastSequence: this.nextSequence - 1n,
                 epoch: 1n,
@@ -147,6 +211,11 @@ export class SingleSequencer implements Sequencer {
 
     async start(): Promise<void> {
         if (this.isActive) return;
+
+        if (this.store) {
+            await this.loadState(this.store);
+        }
+
         this.isActive = true;
         this.pool.startEviction();
         this.finality.startAutoFinalize();
@@ -165,18 +234,19 @@ export class SingleSequencer implements Sequencer {
         this.pool.clear();
         this.finality.clear();
         this.sequenced.clear();
+        this.nonces.clear();
         this.nextSequence = 1n;
     }
 
     private sequenceTransaction(tx: RawTransaction): OrderedTransaction {
-        // Remove from pool
+        // Remove from pool (should already be there if we called this from submit)
         this.pool.remove(tx.hash);
 
         // Create ordered transaction
         const ordered: OrderedTransaction = {
             tx,
             sequenceNumber: this.nextSequence++,
-            sequencedAt: BigInt(Date.now()),
+            sequencedAt: BigInt(this.clock.now()),
             finality: 'sequenced',
         };
 
@@ -191,6 +261,12 @@ export class SingleSequencer implements Sequencer {
         // Emit to subscribers
         this.emitTransaction(ordered);
 
+        if (this.store) {
+            this.saveState(this.store).catch(err => {
+                console.error('Failed to save sequencer state:', err);
+            });
+        }
+
         return ordered;
     }
 
@@ -204,10 +280,54 @@ export class SingleSequencer implements Sequencer {
         }
     }
 
+    private async loadState(store: Store): Promise<void> {
+        try {
+            // Load sequence number
+            const seqBytes = await store.get('sequencer:next_sequence');
+            if (seqBytes) {
+                const seqStr = Buffer.from(seqBytes).toString('utf-8');
+                this.nextSequence = BigInt(seqStr);
+            }
+
+            // Load nonces
+            const iterator = store.iterator({
+                gte: 'sequencer:nonce:',
+                lte: 'sequencer:nonce:\uffff'
+            });
+
+            try {
+                while (true) {
+                    const entry = await iterator.next();
+                    if (!entry) break;
+
+                    const keyStr = typeof entry[0] === 'string' ? entry[0] : Buffer.from(entry[0]).toString('utf-8');
+                    const addressHex = keyStr.replace('sequencer:nonce:', '');
+                    const nonce = BigInt(Buffer.from(entry[1]).toString('utf-8'));
+                    this.nonces.set(addressHex, nonce);
+                }
+            } finally {
+                await iterator.end();
+            }
+
+        } catch (error) {
+            // Ignore missing state on first run
+        }
+    }
+
+    private async saveState(store: Store): Promise<void> {
+        const batch = store.batch();
+        batch.put('sequencer:next_sequence', Buffer.from(this.nextSequence.toString()));
+
+        // Save all nonces
+        for (const [address, nonce] of this.nonces) {
+            batch.put(`sequencer:nonce:${address}`, Buffer.from(nonce.toString()));
+        }
+
+        await batch.write();
+    }
+
     private hashToKey(hash: Uint8Array): string {
-        return Array.from(hash)
-            .map((b) => b.toString(16).padStart(2, '0'))
-            .join('');
+        return bytesToHex(hash, false);
     }
 }
 

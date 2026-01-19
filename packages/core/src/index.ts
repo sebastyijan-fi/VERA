@@ -8,6 +8,9 @@
 // Export error types
 export * from './errors.js';
 
+// Types
+export * from './types/index.js';
+
 // Export crypto utilities
 export * from './crypto/index.js';
 

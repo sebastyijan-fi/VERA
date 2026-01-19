@@ -104,7 +104,7 @@ export function signWithDomain(
 export function signTransaction(
     transactionId: Bytes32,
     privateKey: PrivateKey,
-    signedFields: readonly string[] = ['version', 'type', 'nonce', 'maxSequence', 'payload']
+    signedFields: readonly string[] = ['version', 'chainId', 'type', 'nonce', 'maxSequence', 'payload']
 ): Signature {
     const message = concat(HashDomains.SIGNATURE, transactionId);
     const signature = sign(message, privateKey);

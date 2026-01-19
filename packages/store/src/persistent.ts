@@ -1,173 +1,224 @@
-/**
- * VERA Persistent State Store
- *
- * Persists the Merkle-tree backed InMemoryStateStore to a disk-based JsonStore.
- * Ensures data integrity by verifying the Merkle root on load.
- */
-
 import {
-    type StateStore,
+    type AsyncStateStore,
     type StateKey,
     type StateValue,
     type StateChange,
     type StateQueryResult,
     type Bytes32,
-    InMemoryStateStore,
-    bytesEqual,
     bytesToHex,
     hexToBytes,
-    createStateStore,
-    toBytes32,
-    StorageError,
-    InternalError,
+    encodeStateKey,
     serializeStateValue,
     deserializeStateValue,
+    sha256,
+    hashStateValue,
+    EMPTY_TREE_ROOT,
+    toBytes32,
 } from '@vera/core';
-import { type Store } from './types.js';
-
-/**
- * Metadata stored alongside the state data
- */
-interface StateMetadata {
-    version: string; // BigInt as string
-    root: string;    // Hex string
-    timestamp: number;
-}
+import type { Store, Clock } from './types.js';
+import { DiskMerkleTrie } from './trie.js';
 
 const METADATA_KEY = Buffer.from('__metadata__');
 
-/**
- * Persistent wrapper around InMemoryStateStore.
- *
- * NOTE: This implementation currently loads ALL state into memory on startup.
- * For production, this should leverage a DB that supports range queries and
- * only load the Merkle Tree / Cache into memory.
- */
-export class PersistentStateStore implements StateStore {
-    private inner: StateStore;
-    private readonly persistence: Store;
+interface StateMetadata {
+    version: string;
+    root: string;
+    timestamp: number;
+}
 
-    constructor(inner: StateStore, persistence: Store) {
-        this.inner = inner;
-        this.persistence = persistence;
+export class PersistentStateStore implements AsyncStateStore {
+    private readonly store: Store;
+    private readonly trie: DiskMerkleTrie;
+    private readonly clock: Clock;
+    private _root: Bytes32;
+    private _version: bigint;
+
+    constructor(store: Store, clock: Clock, root: Bytes32 = EMPTY_TREE_ROOT, version: bigint = 0n) {
+        this.store = store;
+        this.clock = clock;
+        this.trie = new DiskMerkleTrie(store);
+        this._root = root;
+        this._version = version;
     }
 
     /**
-     * Loads state from the persistence layer.
-     * Verifies the Merkle root matches the stored metadata.
+     * Loads the store from persistence or initializes a new one.
      */
-    static async load(persistence: Store): Promise<PersistentStateStore> {
+    static async load(store: Store, clock?: Clock): Promise<PersistentStateStore> {
+        const metaBytes = await store.get(METADATA_KEY);
+        let root = EMPTY_TREE_ROOT;
+        let version = 0n;
+
+        // Default clock if not provided (SystemClock equivalent)
+        const sysClock: Clock = clock ?? { now: () => Date.now() };
+
+        if (metaBytes) {
+            const meta = JSON.parse(Buffer.from(metaBytes).toString()) as StateMetadata;
+            root = toBytes32(hexToBytes(meta.root));
+            version = BigInt(meta.version);
+        }
+
+        return new PersistentStateStore(store, sysClock, root, version);
+    }
+
+    get root(): Bytes32 {
+        return this._root;
+    }
+
+    get version(): bigint {
+        return this._version;
+    }
+
+    async get(key: StateKey): Promise<StateValue | null> {
+        // Fast path: direct DB lookup
+        const dbKey = this.toDbKey(key);
+        const data = await this.store.get(dbKey);
+        if (!data) return null;
+        return deserializeStateValue(data);
+    }
+
+    async getWithProof(key: StateKey): Promise<StateQueryResult> {
+        const value = await this.get(key);
+        const trieKey = sha256(encodeStateKey(key));
+        const proof = await this.trie.prove(this._root, trieKey);
+
+        return {
+            value,
+            proof: {
+                ...proof,
+                value: value ? serializeStateValue(value) : null
+            }
+        };
+    }
+
+    async has(key: StateKey): Promise<boolean> {
+        const dbKey = this.toDbKey(key);
+        const data = await this.store.get(dbKey);
+        return !!data;
+    }
+
+    async *keys(namespace: string): AsyncIterableIterator<StateKey> {
+        const prefix = `state:${namespace}:`;
+        const iterator = this.store.iterator({
+            gte: prefix,
+            lte: prefix + '\uffff'
+        });
+
         try {
-            // 1. Load Metadata
-            const metaBytes = await persistence.get(METADATA_KEY);
-            let metadata: StateMetadata | null = null;
+            while (true) {
+                const entry = await iterator.next();
+                if (!entry) break;
 
-            if (metaBytes) {
-                metadata = JSON.parse(metaBytes.toString());
+                const keyStr = typeof entry[0] === 'string' ? entry[0] : Buffer.from(entry[0]).toString('utf-8');
+                if (!keyStr.startsWith(prefix)) break;
+
+                yield this.fromDbKey(keyStr);
             }
-
-            // 2. Load All Data
-            const entries: { key: StateKey; value: StateValue }[] = [];
-            const iter = persistence.iterator();
-
-            for await (const [k, v] of iter) {
-                // Skip metadata key
-                // JsonStore memory implementation uses string keys for strings, buffer for bytes
-                const keyBuf = typeof k === 'string' ? Buffer.from(k) : k;
-                if (keyBuf.equals(METADATA_KEY)) continue;
-
-                // Parse Key (namespace:id) -> StateKey
-                // We assume keys are stored as utf8 strings of "namespace:hexId"
-                const keyStr = keyBuf.toString('utf-8');
-                const parts = keyStr.split(':');
-                if (parts.length !== 2) continue;
-
-                const [namespace, idHex] = parts;
-                const id = hexToBytes(idHex!);
-
-                // Parse Value (CBOR bytes) -> StateValue
-                const value = deserializeStateValue(v);
-
-                entries.push({
-                    key: { namespace: namespace!, id: toBytes32(id) },
-                    value
-                });
-            }
-
-            // Create store from entries
-            const store = createStateStore(entries, metadata ? BigInt(metadata.version) : 0n);
-
-            // Verify Root if metadata exists
-            if (metadata && !bytesEqual(store.root, hexToBytes(metadata.root))) {
-                throw new StorageError('State root mismatch on load. Persistence corrupted.');
-            }
-
-            return new PersistentStateStore(store, persistence);
-        } catch (error: any) {
-            throw new StorageError(`Failed to load state: ${error.message}`);
+        } finally {
+            await iterator.end();
         }
     }
 
-    get version(): bigint { return this.inner.version; }
-    get root(): Bytes32 { return this.inner.root; }
+    async *entries(): AsyncIterableIterator<{ key: StateKey; value: StateValue }> {
+        const iterator = this.store.iterator({
+            gte: 'state:',
+            lte: 'state:\uffff'
+        });
 
-    get(key: StateKey): StateValue | null {
-        return this.inner.get(key);
+        try {
+            while (true) {
+                const entry = await iterator.next();
+                if (!entry) break;
+
+                const keyStr = typeof entry[0] === 'string' ? entry[0] : Buffer.from(entry[0]).toString('utf-8');
+                if (!keyStr.startsWith('state:')) continue;
+
+                const key = this.fromDbKey(keyStr);
+                const value = deserializeStateValue(entry[1]);
+                yield { key, value };
+            }
+        } finally {
+            await iterator.end();
+        }
     }
 
-    getWithProof(key: StateKey): StateQueryResult {
-        return this.inner.getWithProof(key);
+    async size(): Promise<number> {
+        const sizeBytes = await this.store.get(Buffer.from('sequencer:state_size'));
+        if (!sizeBytes) return 0;
+        return parseInt(Buffer.from(sizeBytes).toString('utf-8'));
     }
 
-    has(key: StateKey): boolean {
-        return this.inner.has(key);
-    }
+    async apply(changes: readonly StateChange[], newVersion: bigint): Promise<AsyncStateStore> {
+        const batch = this.store.batch();
+        const trieCache = new Map<string, any>();
+        let newRoot = this._root;
+        let sizeDelta = 0;
 
-    keys(namespace: string): IterableIterator<StateKey> {
-        return this.inner.keys(namespace);
-    }
+        // 1. Process Changes
+        for (const change of changes) {
+            const dbKey = this.toDbKey(change.key);
+            const trieKey = sha256(encodeStateKey(change.key));
 
-    entries(): IterableIterator<{ key: StateKey; value: StateValue }> {
-        return this.inner.entries();
-    }
+            if (change.type === 'set') {
+                const exists = await this.has(change.key);
+                if (!exists) sizeDelta++;
 
-    size(): number {
-        return this.inner.size();
-    }
+                const valueBytes = serializeStateValue(change.value);
+                const valueHash = hashStateValue(valueBytes);
 
-    apply(changes: readonly StateChange[], newVersion: bigint): StateStore {
-        // Apply to inner (immutable)
-        const newInner = this.inner.apply(changes, newVersion);
+                // Stage DB Update
+                batch.put(dbKey, valueBytes);
+                // Stage Trie Update
+                newRoot = await this.trie.update(newRoot, trieKey, valueHash, batch, trieCache);
+            } else {
+                const exists = await this.has(change.key);
+                if (exists) sizeDelta--;
 
-        // Return new wrapper connected to same persistence.
-        // It is NOT automatically saved.
-        return new PersistentStateStore(newInner, this.persistence);
-    }
-
-    /**
-     * Persists the current state to disk.
-     */
-    async commit(): Promise<void> {
-        const batch = this.persistence.batch();
-
-        // 1. Write all entries
-        // Optimization: track diffs only?
-        // For now, write all (simple correctness)
-        for (const { key, value } of this.inner.entries()) {
-            const keyStr = `${key.namespace}:${bytesToHex(key.id)}`;
-            const valueBytes = serializeStateValue(value);
-            batch.put(Buffer.from(keyStr), valueBytes);
+                // Stage DB Update
+                batch.del(dbKey);
+                // Stage Trie Update
+                newRoot = await this.trie.delete(newRoot, trieKey, batch, trieCache);
+            }
         }
 
-        // 2. Write Metadata
+        // 2. Update Size Metadata
+        const currentSize = await this.size();
+        const newSize = Math.max(0, currentSize + sizeDelta);
+        batch.put(Buffer.from('sequencer:state_size'), Buffer.from(newSize.toString()));
+
+        // 3. Update Root Metadata
         const metadata: StateMetadata = {
-            version: this.version.toString(),
-            root: bytesToHex(this.root),
-            timestamp: Date.now()
+            version: newVersion.toString(),
+            root: bytesToHex(newRoot),
+            timestamp: this.clock.now(),
         };
         batch.put(METADATA_KEY, Buffer.from(JSON.stringify(metadata)));
 
-        // 3. Commit batch
+        // 4. Commit All Atomically
         await batch.write();
+
+        return new PersistentStateStore(this.store, this.clock, newRoot, newVersion);
+    }
+
+    // ========================================================================
+    // Helpers
+    // ========================================================================
+
+    private toDbKey(key: StateKey): string {
+        return `state:${key.namespace}:${bytesToHex(key.id)}`;
+    }
+
+    private fromDbKey(dbKey: string): StateKey {
+        // Format: state:<namespace>:<hexId>
+        const parts = dbKey.split(':');
+        if (parts.length < 3) throw new Error(`Invalid DB key: ${dbKey}`);
+
+        const namespace = parts[1]!;
+        const hexId = parts[2]!;
+
+        return {
+            namespace,
+            id: toBytes32(hexToBytes(hexId))
+        };
     }
 }

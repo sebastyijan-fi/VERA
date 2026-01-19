@@ -19,7 +19,8 @@
         "typecheck": "tsc --noEmit"
     },
     "dependencies": {
-        "@vera/core": "workspace:*"
+        "@vera/core": "workspace:*",
+        "@vera/store": "workspace:*"
     },
     "devDependencies": {
         "@types/node": "^20.0.0",

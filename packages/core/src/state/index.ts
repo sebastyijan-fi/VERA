@@ -9,4 +9,6 @@ export {
     type StateDiff,
     createStateDiff,
     applyStateDiff,
+    serializeStateValue,
+    deserializeStateValue,
 } from './store.js';

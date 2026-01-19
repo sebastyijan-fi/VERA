@@ -100,6 +100,7 @@ function sortObjectKeys(obj: unknown): unknown {
  */
 export interface CanonicalTransaction {
     version: number;
+    chainId: Uint8Array;
     type: {
         moduleId: Uint8Array;
         transactionName: string;
@@ -115,6 +116,7 @@ export interface CanonicalTransaction {
 export function encodeCanonicalTransaction(tx: CanonicalTransaction): Bytes {
     const canonical: Record<string, unknown> = {
         version: tx.version,
+        chainId: tx.chainId,
         type: {
             moduleId: tx.type.moduleId,
             transactionName: tx.type.transactionName,

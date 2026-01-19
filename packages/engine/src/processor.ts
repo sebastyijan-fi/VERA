@@ -83,12 +83,15 @@ export class TransactionStateProcessor {
     /**
      * Executes a transaction
      */
-    execute(
+    /**
+     * Executes a transaction
+     */
+    async execute(
         functionName: string,
         args: Value[],
         caller: string,
         block?: Partial<BlockContext>
-    ): ExecutionResult {
+    ): Promise<ExecutionResult> {
         // Set up components
         const gas = new GasMeter(this.options.gasLimit);
         const state = new StateJournal(this.cloneState(this.options.initialState));
@@ -112,7 +115,7 @@ export class TransactionStateProcessor {
         try {
             // Execute via VM
             const vm = new VirtualMachine(this.program);
-            const result = vm.execute(functionName, args, context, gas);
+            const result = await vm.execute(functionName, args, context, gas);
 
             if (!result.success) {
                 // Rollback state on failure
@@ -165,13 +168,13 @@ export class TransactionStateProcessor {
     /**
      * Validates a transaction without committing
      */
-    validate(
+    async validate(
         functionName: string,
         args: Value[],
         caller: string,
         block?: Partial<BlockContext>
-    ): { valid: boolean; gasEstimate: bigint; error?: string | undefined } {
-        const result = this.execute(functionName, args, caller, block);
+    ): Promise<{ valid: boolean; gasEstimate: bigint; error?: string | undefined }> {
+        const result = await this.execute(functionName, args, caller, block);
         const ret: { valid: boolean; gasEstimate: bigint; error?: string | undefined } = {
             valid: result.success,
             gasEstimate: result.gasUsed,

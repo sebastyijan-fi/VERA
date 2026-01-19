@@ -1,0 +1,39 @@
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext",
+        "lib": [
+            "ES2022"
+        ],
+        "strict": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true,
+        "declaration": true,
+        "declarationMap": true,
+        "sourceMap": true,
+        "composite": true,
+        "resolveJsonModule": true
+    },
+    "references": [
+        {
+            "path": "./packages/core"
+        },
+        {
+            "path": "./packages/dsl"
+        },
+        {
+            "path": "./packages/store"
+        },
+        {
+            "path": "./packages/engine"
+        },
+        {
+            "path": "./packages/ordering"
+        },
+        {
+            "path": "./packages/cli"
+        }
+    ]
+}
