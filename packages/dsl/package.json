@@ -1,0 +1,61 @@
+{
+    "name": "@vera/dsl",
+    "version": "0.1.0",
+    "description": "VERA Domain-Specific Language parser and compiler",
+    "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        },
+        "./lexer": {
+            "types": "./dist/lexer/index.d.ts",
+            "import": "./dist/lexer/index.js"
+        },
+        "./parser": {
+            "types": "./dist/parser/index.d.ts",
+            "import": "./dist/parser/index.js"
+        },
+        "./ast": {
+            "types": "./dist/ast/index.d.ts",
+            "import": "./dist/ast/index.js"
+        },
+        "./checker": {
+            "types": "./dist/checker/index.d.ts",
+            "import": "./dist/checker/index.js"
+        }
+    },
+    "files": [
+        "dist",
+        "src"
+    ],
+    "scripts": {
+        "build": "tsup",
+        "dev": "tsup --watch",
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "test:coverage": "vitest run --coverage",
+        "typecheck": "tsc --noEmit",
+        "lint": "eslint src",
+        "clean": "rm -rf dist"
+    },
+    "dependencies": {
+        "@vera/core": "workspace:*"
+    },
+    "devDependencies": {
+        "@types/node": "^22.10.7",
+        "tsup": "^8.3.5",
+        "typescript": "^5.7.3",
+        "vitest": "^3.0.4"
+    },
+    "keywords": [
+        "vera",
+        "dsl",
+        "parser",
+        "lexer",
+        "compiler"
+    ],
+    "license": "Apache-2.0"
+}

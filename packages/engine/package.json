@@ -1,0 +1,46 @@
+{
+    "name": "@vera/engine",
+    "version": "0.1.0",
+    "type": "module",
+    "description": "VERA Transaction State Processor (TSP)",
+    "exports": {
+        ".": {
+            "import": "./dist/index.js",
+            "types": "./dist/index.d.ts"
+        },
+        "./vm": {
+            "import": "./dist/vm/index.js",
+            "types": "./dist/vm/index.d.ts"
+        },
+        "./gas": {
+            "import": "./dist/gas/index.js",
+            "types": "./dist/gas/index.d.ts"
+        },
+        "./state": {
+            "import": "./dist/state/index.js",
+            "types": "./dist/state/index.d.ts"
+        }
+    },
+    "scripts": {
+        "build": "tsup",
+        "dev": "tsup --watch",
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "test:coverage": "vitest run --coverage",
+        "lint": "eslint src",
+        "typecheck": "tsc --noEmit"
+    },
+    "dependencies": {
+        "@vera/core": "workspace:*",
+        "@vera/dsl": "workspace:*"
+    },
+    "devDependencies": {
+        "tsup": "^8.0.0",
+        "typescript": "^5.3.0",
+        "vitest": "^3.0.0"
+    },
+    "files": [
+        "dist",
+        "src"
+    ]
+}

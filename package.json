@@ -1,0 +1,29 @@
+{
+  "name": "vera",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Verifiable Execution & Registry Architecture",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "test:coverage": "pnpm -r test:coverage",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "clean": "pnpm -r clean"
+  },
+  "keywords": [
+    "verifiable",
+    "execution",
+    "registry",
+    "ledger",
+    "deterministic",
+    "audit"
+  ],
+  "author": "",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}

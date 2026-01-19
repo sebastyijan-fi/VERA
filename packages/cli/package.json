@@ -1,0 +1,28 @@
+{
+    "name": "@vera/cli",
+    "version": "0.1.0",
+    "description": "Command line interface for VERA",
+    "type": "module",
+    "bin": {
+        "vera": "./dist/bin.js"
+    },
+    "scripts": {
+        "build": "tsup",
+        "dev": "tsup --watch",
+        "test": "vitest run"
+    },
+    "dependencies": {
+        "@vera/core": "workspace:*",
+        "@vera/dsl": "workspace:*",
+        "@vera/engine": "workspace:*",
+        "@vera/store": "workspace:*",
+        "cac": "^6.7.14",
+        "picocolors": "^1.0.0"
+    },
+    "devDependencies": {
+        "@types/node": "^20.0.0",
+        "tsup": "^8.0.0",
+        "typescript": "^5.0.0",
+        "vitest": "^1.0.0"
+    }
+}

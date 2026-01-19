@@ -1,0 +1,35 @@
+module TestContract;
+
+// Entities
+entity Balances [Address] {
+  amount: UInt<64>
+}
+
+entity TotalSupply [Address] {
+  amount: UInt<64>
+}
+
+// Event
+event Transfer {
+  src: Address,
+  to: Address,
+  amount: UInt<64>
+}
+
+// Initializer
+transaction init(supply: UInt<64>) {
+  // state.totalSupply = supply;
+  emit Transfer(0x0000000000000000000000000000000000000000, caller, supply);
+}
+
+// Transfer function
+transaction transfer(to: Address, amount: UInt<64>) {
+  // Mock check
+  require amount > 0, "Amount must be positive";
+
+  // State updates disabled until DSL supports Read-Modify-Write
+  // set get<Balances>(caller).amount -= amount;
+  // set get<Balances>(to).amount += amount;
+
+  emit Transfer(caller, to, amount);
+}
