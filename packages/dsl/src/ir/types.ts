@@ -90,6 +90,9 @@ export enum IROpcode {
     // No operation (for debugging/padding)
     NOP = 'NOP',
 
+    // Crypto
+    HASH = 'HASH',           // SHA-256 hash of data
+
     // Halt execution
     HALT = 'HALT',
 }

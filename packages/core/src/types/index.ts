@@ -79,3 +79,7 @@ export {
     type ValidatorInfo,
     type NetworkStatus,
 } from './block.js';
+// Consensus
+export {
+    type ConsensusEngine,
+} from './consensus.js';

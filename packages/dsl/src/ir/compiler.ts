@@ -369,6 +369,31 @@ export class IRCompiler {
                 break;
 
             case 'CallExpr':
+                // Check if it's a standard library call: std.<method>(...)
+                if (expr.callee.kind === 'MemberExpr' &&
+                    expr.callee.object.kind === 'Identifier' &&
+                    expr.callee.object.name === 'std') {
+
+                    const method = expr.callee.property;
+                    switch (method) {
+                        case 'now':
+                            this.emit(ir(IROpcode.CTX_BLOCK, 'timestamp', expr.span));
+                            return;
+                        case 'sender':
+                            this.emit(ir(IROpcode.CTX_CALLER, undefined, expr.span));
+                            return;
+                        case 'hash':
+                            if (expr.arguments.length !== 1) {
+                                throw new Error('std.hash(data) expects 1 argument');
+                            }
+                            this.compileExpression(expr.arguments[0]!);
+                            this.emit(ir(IROpcode.HASH, undefined, expr.span));
+                            return;
+                        default:
+                            throw new Error(`Unknown std library function: ${method}`);
+                    }
+                }
+
                 for (const arg of expr.arguments) {
                     this.compileExpression(arg);
                 }

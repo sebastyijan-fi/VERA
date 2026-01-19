@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { cac } from 'cac';
 import pc from 'picocolors';
-import { version } from '../package.json';
+import pkg from '../package.json' with { type: 'json' };
+const { version } = pkg;
 
 const cli = cac('vera');
 
@@ -33,9 +34,31 @@ cli
 cli.command('node', 'Start a VERA blockchain node')
     .option('--data-dir <dir>', 'Directory to store chain data', { default: './data' })
     .option('--port <port>', 'Port for RPC server', { default: 8545 })
+    .option('--dsl <file>', 'VERA DSL registry file to load')
     .action(async (options) => {
-        const { node } = await import('./commands/node.js');
-        node(options);
+        try {
+            const { node } = await import('./commands/node.js');
+            await node(options);
+        } catch (error: any) {
+            console.error(pc.red(`Error: ${error.message}`));
+            process.exit(1);
+        }
+    });
+
+cli.command('verify', 'Verify a Merkle state proof')
+    .option('--proof <file>', 'JSON proof file')
+    .option('--root <hex>', 'Target state root (hex)')
+    .action(async (options) => {
+        try {
+            if (!options.proof || !options.root) {
+                throw new Error('Missing --proof or --root');
+            }
+            const { verify } = await import('./commands/verify.js');
+            await verify(options);
+        } catch (error: any) {
+            console.error(pc.red(`Error: ${error.message}`));
+            process.exit(1);
+        }
     });
 
 cli.command('run <file>', 'Execute a VERA script')

@@ -22,6 +22,9 @@ importers:
       '@vera/ordering':
         specifier: workspace:*
         version: link:../ordering
+      '@vera/sdk':
+        specifier: workspace:*
+        version: link:../sdk
       '@vera/store':
         specifier: workspace:*
         version: link:../store

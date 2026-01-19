@@ -16,12 +16,17 @@ import {
     encodeCanonicalTransaction,
 } from '@vera/core';
 import pc from 'picocolors';
+import fs from 'node:fs/promises';
+import { compileToIR, Lexer, Parser } from '@vera/dsl';
+import { createProcessor, TransactionStateProcessor } from '@vera/engine';
+import { bytesToHex as bToHex } from '@vera/core';
 
 export async function node(
     options: {
         dataDir?: string;
         port?: number;
         chainId?: string;
+        dsl?: string;
     }
 ) {
     const dataDir = path.resolve(options.dataDir || './data');
@@ -41,14 +46,56 @@ export async function node(
         const seqPersistence = new LevelDBStore(seqDbPath);
 
         // 2. Initialize State Store
-        const stateStore = await PersistentStateStore.load(statePersistence);
+        let stateStore = await PersistentStateStore.load(statePersistence);
         console.log(pc.green(`✓ State Loaded (Version: ${stateStore.version})`));
+        console.log(pc.gray(`✓ Current Root: 0x${bToHex(stateStore.root)}`));
 
-        // 3. Initialize Sequencer
+        // 3. Initialize DSL & Engine
+        let processor: TransactionStateProcessor | undefined;
+        if (options.dsl) {
+            const dslPath = path.resolve(options.dsl);
+            const source = await fs.readFile(dslPath, 'utf8');
+            const lexer = new Lexer(source);
+            const parser = new Parser(lexer.tokenize());
+            const ir = compileToIR(parser.parseModule());
+            processor = createProcessor(ir);
+            console.log(pc.green(`✓ DSL Loaded & Compiled: ${options.dsl}`));
+        } else {
+            console.log(pc.yellow('! No DSL provided. Node will run in sequencer-only mode.'));
+        }
+
+        // 4. Initialize Sequencer
         const sequencer = createSingleSequencer({
             id: 'vera-local-1',
             chainId,
             store: seqPersistence,
+        });
+
+        // 5. Execution Loop
+        sequencer.onFinality(async (tx) => {
+            if (!processor) return;
+
+            try {
+                // Decode arguments from payload
+                const args = TransactionStateProcessor.decodeArguments(tx.tx.args);
+
+                // Execute
+                const result = await processor.execute(tx.tx.function, args, bToHex(tx.tx.sender), {
+                    height: tx.sequenceNumber,
+                    timestamp: tx.sequencedAt,
+                });
+
+                if (result.success) {
+                    // Apply state changes
+                    const nextVersion = tx.sequenceNumber;
+                    stateStore = await stateStore.apply(result.binaryChanges, nextVersion) as PersistentStateStore;
+                    console.log(pc.green(`✓ Executed #${tx.sequenceNumber}: ${tx.tx.function} (Root: 0x${bToHex(stateStore.root)})`));
+                } else {
+                    console.error(pc.red(`✗ Execution Failed #${tx.sequenceNumber}: ${result.error?.message}`));
+                }
+            } catch (err: any) {
+                console.error(pc.red(`✗ Execution Error #${tx.sequenceNumber}:`), err.message);
+            }
         });
 
         // 4. Start Server
@@ -139,7 +186,33 @@ export async function node(
                         result = await sequencer.submit(rawTx as any);
                         console.log(pc.green(`✓ Transaction Submitted: ${txData.type.transactionName} (Nonce: ${nonce})`));
                     } else if (method === 'vera_status') {
-                        result = await sequencer.getStatus();
+                        const status = await sequencer.getStatus();
+                        result = {
+                            ...status,
+                            state: {
+                                root: bToHex(stateStore.root),
+                                version: stateStore.version.toString(),
+                                size: await stateStore.size(),
+                            }
+                        };
+                    } else if (method === 'vera_get') {
+                        const key = params[0];
+                        if (!key) throw new Error('Missing key');
+                        // Assume key is { namespace, id (hex) }
+                        const decodedKey = {
+                            namespace: key.namespace,
+                            id: hexToBytes32(key.id)
+                        };
+                        const value = await stateStore.get(decodedKey);
+                        result = value;
+                    } else if (method === 'vera_getProof') {
+                        const key = params[0];
+                        if (!key) throw new Error('Missing key');
+                        const decodedKey = {
+                            namespace: key.namespace,
+                            id: hexToBytes32(key.id)
+                        };
+                        result = await stateStore.getWithProof(decodedKey);
                     } else {
                         throw new Error(`Method ${method} not found`);
                     }

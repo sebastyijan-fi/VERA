@@ -1,6 +1,7 @@
 import {
     type Bytes32,
     type Transaction,
+    type StateQueryResult,
 } from '@vera/core';
 
 export interface SequencerStatus {
@@ -14,6 +15,11 @@ export interface SequencerStatus {
     pendingCount: number;
     sequencedCount: number;
     finalizedCount: number;
+    state?: {
+        root: string;
+        version: string;
+        size: number;
+    };
 }
 
 /**
@@ -35,6 +41,13 @@ export class VeraClient {
      */
     async getStatus(): Promise<SequencerStatus> {
         return this.rpc('vera_status', []);
+    }
+
+    /**
+     * Gets a state entry with a Merkle proof
+     */
+    async getProof(namespace: string, id: string): Promise<StateQueryResult> {
+        return this.rpc('vera_getProof', [{ namespace, id }]);
     }
 
     private async rpc(method: string, params: any[]): Promise<any> {

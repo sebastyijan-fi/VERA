@@ -21,6 +21,7 @@ import {
 import { Stack, CallStack } from './stack.js';
 import { GasMeter, OutOfGasError } from '../gas/gas.js';
 import type { ExecutionContext } from '../state/context.js';
+import { sha256 } from '@vera/core';
 
 // ============================================================================
 // VM Error
@@ -627,6 +628,20 @@ export class VirtualMachine {
             // No operation (labels)
             case IROpcode.NOP:
                 break;
+
+            case IROpcode.HASH: {
+                const data = this.stack.pop();
+                let bytes: Uint8Array;
+                if (data.kind === 'bytes') {
+                    bytes = data.value;
+                } else if (data.kind === 'string') {
+                    bytes = new TextEncoder().encode(data.value);
+                } else {
+                    throw new VMError(`HASH expected bytes or string, got ${data.kind}`, this.pc);
+                }
+                this.stack.push(bytesValue(sha256(bytes)));
+                break;
+            }
 
             // Halt
             case IROpcode.HALT:

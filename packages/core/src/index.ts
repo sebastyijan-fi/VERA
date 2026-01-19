@@ -10,6 +10,7 @@ export * from './errors.js';
 
 // Types
 export * from './types/index.js';
+export * from './types/consensus.js';
 
 // Export crypto utilities
 export * from './crypto/index.js';

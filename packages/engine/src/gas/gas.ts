@@ -102,6 +102,7 @@ export const GAS_COSTS: Record<IROpcode, bigint> = {
     [IROpcode.EMIT]: 50n,
 
     // Misc
+    [IROpcode.HASH]: 20n,
     [IROpcode.NOP]: 0n,
     [IROpcode.HALT]: 0n,
 };

@@ -5,12 +5,14 @@
  */
 
 import type { IRProgram } from '@vera/dsl';
-import { VirtualMachine, VMError, RequireError, EnsureError } from './vm/index.js';
+import { VirtualMachine, VMError, RequireError, EnsureError, stringValue } from './vm/index.js';
+import { encodeValue, prepareForEncoding, restoreFromDecoding } from './vm/codec.js';
 import type { Value } from './vm/value.js';
 import { GasMeter, OutOfGasError } from './gas/index.js';
-import { StateJournal, createExecutionContext, type BlockContext } from './state/index.js';
+import { StateJournal, createExecutionContext, type BlockContext, type ExecutionContext } from './state/index.js';
 import { EventEmitter, type EmittedEvent } from './events.js';
 import { AuditLogger, type AuditLog } from './audit.js';
+import { decode, encode, hexToBytes32, sha256, type StateKey, type StateValue as BinaryStateValue, type StateChange } from '@vera/core';
 
 // ============================================================================
 // Execution Result
@@ -34,6 +36,8 @@ export interface ExecutionResult {
     instructionsExecuted: number;
     /** State changes (entity -> key -> value) */
     stateChanges: Map<string, Map<string, Value>>;
+    /** Binary state changes for StateStore.apply */
+    binaryChanges: StateChange[];
     /** Audit log if enabled */
     auditLog?: AuditLog | undefined;
 }
@@ -109,6 +113,11 @@ export class TransactionStateProcessor {
         }
         const context = createExecutionContext(contextOptions);
 
+        // Handle system transactions
+        if (functionName.startsWith('system_')) {
+            return this.handleSystemTransaction(functionName, args, context, gas, state, events, audit);
+        }
+
         // Start audit if enabled
         audit?.start(functionName);
 
@@ -140,6 +149,7 @@ export class TransactionStateProcessor {
                 gasUsed: gas.used,
                 instructionsExecuted: result.instructionsExecuted,
                 stateChanges: this.getStateAsMap(state),
+                binaryChanges: this.translateToBinaryChanges(state, context.block.timestamp),
                 auditLog: audit?.finish(true, gas.used),
             };
         } catch (e) {
@@ -157,6 +167,7 @@ export class TransactionStateProcessor {
                     },
                     instructionsExecuted: 0,
                     stateChanges: new Map(),
+                    binaryChanges: [],
                     auditLog: audit?.finish(false, gas.used, e.message),
                 };
             }
@@ -194,6 +205,56 @@ export class TransactionStateProcessor {
             .map(f => f.name);
     }
 
+    private async handleSystemTransaction(
+        functionName: string,
+        args: Value[],
+        context: ExecutionContext,
+        gas: GasMeter,
+        state: StateJournal,
+        events: EventEmitter,
+        audit?: AuditLogger
+    ): Promise<ExecutionResult> {
+        audit?.start(functionName);
+
+        try {
+            switch (functionName) {
+                case 'system_upgradeModule': {
+                    // Stub for module upgrade
+                    // In a full implementation, this would update the module IR in state
+                    if (args.length < 1) throw new Error('system_upgradeModule requires IR payload');
+                    events.emit('GovernanceUpdate', stringValue(`Module ${this.program.name} upgraded`));
+                    break;
+                }
+                default:
+                    throw new Error(`Unknown system transaction: ${functionName}`);
+            }
+
+            state.commit();
+
+            return {
+                success: true,
+                events: events.getEvents(),
+                gasUsed: gas.used,
+                instructionsExecuted: 1,
+                stateChanges: this.getStateAsMap(state),
+                binaryChanges: this.translateToBinaryChanges(state, context.block.timestamp),
+                auditLog: audit?.finish(true, gas.used),
+            };
+        } catch (e: any) {
+            state.rollback();
+            return {
+                success: false,
+                events: events.getEvents(),
+                gasUsed: gas.used,
+                error: { type: 'runtime', message: e.message },
+                instructionsExecuted: 0,
+                stateChanges: new Map(),
+                binaryChanges: [],
+                auditLog: audit?.finish(false, gas.used, e.message),
+            };
+        }
+    }
+
     private buildErrorResult(
         vmError: VMError,
         gasUsed: bigint,
@@ -225,6 +286,7 @@ export class TransactionStateProcessor {
             error,
             instructionsExecuted,
             stateChanges: new Map(),
+            binaryChanges: [],
             auditLog,
         };
     }
@@ -247,6 +309,69 @@ export class TransactionStateProcessor {
             result.set(entity, new Map(values));
         }
         return result;
+    }
+
+    /**
+     * Decodes a transaction payload into VM Values.
+     * Expects a CBOR-encoded array of runtime values.
+     */
+    static decodeArguments(payload: Uint8Array): Value[] {
+        const raw = decode(payload);
+        if (!Array.isArray(raw)) {
+            // If it's not an array, maybe it's a single value or empty
+            if (raw === undefined || raw === null) return [];
+            // If it's a single value, wrap it in an array for restoreFromDecoding
+            return [restoreFromDecoding(raw)];
+        }
+        // If it's an array of encoded values (nested structure)
+        return raw.map(r => restoreFromDecoding(r));
+    }
+
+    /**
+     * Encodes VM Values into a transaction payload.
+     */
+    static encodeArguments(args: Value[]): Uint8Array {
+        return encode(args.map(a => prepareForEncoding(a)));
+    }
+
+    private translateToBinaryChanges(journal: StateJournal, timestamp: bigint): StateChange[] {
+        const changes: StateChange[] = [];
+        const entries = journal.getEntries();
+        const encoder = new TextEncoder();
+
+        for (const entry of entries) {
+            // Map entity key to 32-byte ID
+            // If the key is a hex address, we use that.
+            // Otherwise we hash the string representation.
+            let id: Uint8Array;
+            if (entry.key.startsWith('0x') && entry.key.length === 66) {
+                id = hexToBytes32(entry.key);
+            } else {
+                id = sha256(encoder.encode(entry.key));
+            }
+
+            const stateKey: StateKey = {
+                namespace: entry.entityType,
+                id: id as any,
+            };
+
+            if (entry.type === 'set') {
+                const binaryValue: BinaryStateValue = {
+                    data: encodeValue(entry.value),
+                    lastModified: timestamp,
+                    schema: {
+                        moduleId: new Uint8Array(32) as any, // TODO: Get from program
+                        schemaName: entry.entityType,
+                        version: 1,
+                    }
+                };
+                changes.push({ type: 'set', key: stateKey, value: binaryValue });
+            } else {
+                changes.push({ type: 'delete', key: stateKey });
+            }
+        }
+
+        return changes;
     }
 }
 
