@@ -26,7 +26,11 @@ export interface SequencerStatus {
  * Client for interacting with a VERA node
  */
 export class VeraClient {
-    constructor(private readonly nodeUrl: string) { }
+    private readonly fetch: typeof globalThis.fetch;
+
+    constructor(private readonly nodeUrl: string, fetchImpl?: typeof globalThis.fetch) {
+        this.fetch = fetchImpl ?? globalThis.fetch.bind(globalThis);
+    }
 
     /**
      * Submits a signed transaction to the node
@@ -51,7 +55,7 @@ export class VeraClient {
     }
 
     private async rpc(method: string, params: any[]): Promise<any> {
-        const response = await fetch(this.nodeUrl, {
+        const response = await this.fetch(this.nodeUrl, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -72,7 +76,7 @@ export class VeraClient {
             throw new Error(`RPC error: ${response.statusText}`);
         }
 
-        const payload = await response.json();
+        const payload: any = await response.json();
         if (payload.error) {
             throw new Error(`RPC error: ${payload.error}`);
         }

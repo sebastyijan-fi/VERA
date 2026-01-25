@@ -21,7 +21,7 @@
     "audit"
   ],
   "author": "",
-  "license": "Apache-2.0",
+  "license": "AGPL-3.0-only",
   "engines": {
     "node": ">=20.0.0",
     "pnpm": ">=9.0.0"

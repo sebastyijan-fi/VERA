@@ -21,7 +21,7 @@ export async function run(file: string, options: { entry?: string, args?: string
         if (file.endsWith('.json')) {
             const content = await fs.readFile(file, 'utf-8');
             // deserialization of BigInt handling
-            program = JSON.parse(content, (key, value) => {
+            program = JSON.parse(content, (_key, value) => {
                 // Heuristic: if looks like big integer?
                 // Or just rely on string parsing if the JSON contains strings for bigints.
                 // The JSON generic parser might not revive BigInts automatically.
@@ -86,7 +86,7 @@ export async function run(file: string, options: { entry?: string, args?: string
                 console.log(pc.blue(`\nEvents (${events.count}):`));
                 for (const event of events.getEvents()) {
                     // Safe logging of event data
-                    const dataStr = JSON.stringify(event, (key, value) =>
+                    const dataStr = JSON.stringify(event, (_key, value) =>
                         typeof value === 'bigint' ? value.toString() : value
                     );
                     console.log(`- ${event.name}: ${dataStr}`);

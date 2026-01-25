@@ -105,6 +105,7 @@ describe('Transaction Encoding', () => {
     it('encodes canonical transaction deterministically', () => {
         const tx = {
             version: 1,
+            chainId: zeroBytes32(),
             type: {
                 moduleId: zeroBytes32(),
                 transactionName: 'Transfer',
@@ -122,6 +123,7 @@ describe('Transaction Encoding', () => {
     it('includes maxSequence when present', () => {
         const tx1 = {
             version: 1,
+            chainId: zeroBytes32(),
             type: { moduleId: zeroBytes32(), transactionName: 'Test' },
             nonce: 1n,
             payload: new Uint8Array([]),

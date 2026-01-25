@@ -1,16 +1,16 @@
 module TestRegistry;
 
 entity Balance[address] {
-    value: int;
+    value: UInt
 }
 
-transaction Deposit(acc: address, amount: int) {
+transaction Deposit(acc: address, amount: UInt) {
     require amount > 0;
     
-    let current = Balance.get(acc);
+    let current = get<Balance>(acc);
     if (current == null) {
-        Balance.set(acc, Balance { value: amount });
+        set get<Balance>(acc) = Balance { value: amount };
     } else {
-        Balance.set(acc, Balance { value: current.value + amount });
+        set get<Balance>(acc) = Balance { value: current.value + amount };
     }
 }

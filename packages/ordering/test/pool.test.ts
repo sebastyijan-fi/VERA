@@ -7,13 +7,15 @@ describe('TransactionPool', () => {
     let pool: TransactionPool;
 
     const createTx = (i: number): RawTransaction => {
-        const hash = new Uint8Array(32).fill(i);
+        const hash = new Uint8Array(32).fill(i) as any; // Cast to Bytes32
         return createRawTransaction(
             hash,
-            new Uint8Array(20).fill(1),
+            new Uint8Array(32).fill(0) as any, // chainId
+            new Uint8Array(20).fill(1) as any, // sender
             'test',
             new Uint8Array(),
-            new Uint8Array()
+            BigInt(i), // nonce
+            new Uint8Array(64) // signature
         );
     };
 
@@ -57,7 +59,7 @@ describe('TransactionPool', () => {
             expect(pool.size).toBe(10);
 
             // Oldest (0) should be gone, New (11) should be present
-            expect(pool.has(new Uint8Array(32).fill(0))).toBe(false);
+            expect(pool.has(new Uint8Array(32).fill(0) as any)).toBe(false);
             expect(pool.has(txNew.hash)).toBe(true);
         });
     });

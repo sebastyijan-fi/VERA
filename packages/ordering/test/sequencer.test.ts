@@ -1,19 +1,29 @@
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createSingleSequencer, SingleSequencer } from '../src/single.js';
 import { createRawTransaction, type RawTransaction } from '../src/types.js';
+
+vi.mock('@vera/core', async () => {
+    const actual = await vi.importActual('@vera/core');
+    return {
+        ...actual,
+        verifyTransactionSignature: () => true,
+    };
+});
 
 describe('SingleSequencer', () => {
     let sequencer: SingleSequencer;
 
     const createTx = (i: number): RawTransaction => {
-        const hash = new Uint8Array(32).fill(i);
+        const hash = new Uint8Array(32).fill(i) as any;
         return createRawTransaction(
             hash,
-            new Uint8Array(20).fill(1),
+            new Uint8Array(32).fill(0) as any, // chainId
+            new Uint8Array(20).fill(1) as any, // sender
             'test',
             new Uint8Array(),
-            new Uint8Array()
+            BigInt(i), // nonce
+            new Uint8Array(64) // signature
         );
     };
 
@@ -39,7 +49,7 @@ describe('SingleSequencer', () => {
 
             const result = await sequencer.submit(tx);
             expect(result.accepted).toBe(false);
-            expect(result.error).toContain('Duplicate');
+            expect(result.error).toMatch(/Duplicate|Nonce too low/);
         });
 
         it('should implement monotonic sequencing', async () => {

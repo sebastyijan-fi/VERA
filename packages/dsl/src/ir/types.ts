@@ -76,6 +76,9 @@ export enum IROpcode {
     MAP_DEL = 'MAP_DEL',         // Delete map key
     MAP_HAS = 'MAP_HAS',         // Check map has key
 
+    // Structs
+    STRUCT_NEW = 'STRUCT_NEW',   // Create new struct instance
+
     // Member access
     MEMBER_GET = 'MEMBER_GET',   // Get object member
     MEMBER_SET = 'MEMBER_SET',   // Set object member

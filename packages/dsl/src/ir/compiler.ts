@@ -447,6 +447,13 @@ export class IRCompiler {
                 this.compileExpression(expr.alternate);
                 this.emitLabel(endLabel);
                 break;
+            case 'StructLiteral':
+                for (const field of expr.fields) {
+                    this.compileExpression(field.value);
+                }
+                const fieldNames = expr.fields.map(f => f.name).join(',');
+                this.emit(ir(IROpcode.STRUCT_NEW, `${expr.structName}:${fieldNames}`, expr.span));
+                break;
         }
     }
 

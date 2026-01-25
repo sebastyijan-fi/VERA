@@ -43,7 +43,7 @@ test('Node integration: submission to state commitment', async () => {
         // 3. Check initial status
         const status1 = await client.getStatus();
         expect(status1.state).toBeDefined();
-        const initialRoot = status1.state.root;
+        const initialRoot = status1.state!.root;
         console.log('Initial Root:', initialRoot);
 
         // 4. Submit Transaction

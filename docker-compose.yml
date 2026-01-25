@@ -4,8 +4,8 @@ services:
     ports:
       - "8545:8545"
     volumes:
-      - node-a-data:/data
-      - ./examples:/examples
+      - node-a-data:/data:Z
+      - ./examples:/examples:z
     command: [ "node", "--data-dir", "/data", "--port", "8545", "--dsl", "/examples/test_registry.vera" ]
 
   node-b:
@@ -13,8 +13,8 @@ services:
     ports:
       - "8546:8545"
     volumes:
-      - node-b-data:/data
-      - ./examples:/examples
+      - node-b-data:/data:Z
+      - ./examples:/examples:z
     command: [ "node", "--data-dir", "/data", "--port", "8545", "--dsl", "/examples/test_registry.vera" ]
 
   node-c:
@@ -22,8 +22,8 @@ services:
     ports:
       - "8547:8545"
     volumes:
-      - node-c-data:/data
-      - ./examples:/examples
+      - node-c-data:/data:Z
+      - ./examples:/examples:z
     command: [ "node", "--data-dir", "/data", "--port", "8545", "--dsl", "/examples/test_registry.vera" ]
 
 volumes:

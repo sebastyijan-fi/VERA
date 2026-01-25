@@ -85,6 +85,7 @@ export type Expression =
     | IndexExpr
     | ContextExpr
     | StateAccessExpr
+    | StructLiteralExpr
     | TernaryExpr;
 
 export interface IdentifierExpr extends AstNode {
@@ -150,6 +151,12 @@ export interface TernaryExpr extends AstNode {
     readonly condition: Expression;
     readonly consequent: Expression;
     readonly alternate: Expression;
+}
+
+export interface StructLiteralExpr extends AstNode {
+    readonly kind: 'StructLiteral';
+    readonly structName: string;
+    readonly fields: readonly { name: string; value: Expression }[];
 }
 
 // ============================================================================

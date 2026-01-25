@@ -942,12 +942,53 @@ export class Parser {
                     index,
                     span: { start: expr.span.start, end: this.previous().span.end },
                 };
+            } else if (this.check(TokenType.LBRACE) && expr.kind === 'Identifier') {
+                // Ambiguity check: Is this a struct literal or a block?
+                // Struct literal: Name { key: value } or Name { }
+                // Block: Name { statement... }
+
+                // Lookahead
+                const next1 = this.tokens[this.current + 1];
+                const next2 = this.tokens[this.current + 2];
+
+                const isStructLiteral =
+                    next1?.type === TokenType.RBRACE ||
+                    (next1?.type === TokenType.IDENTIFIER && next2?.type === TokenType.COLON);
+
+                if (isStructLiteral) {
+                    this.advance(); // Consume {
+                    expr = this.finishStructLiteral(expr.name, expr.span.start);
+                } else {
+                    break;
+                }
             } else {
                 break;
             }
         }
 
         return expr;
+    }
+
+    private finishStructLiteral(structName: string, start: SourceLocation): Expression {
+        const fields: { name: string; value: Expression }[] = [];
+
+        if (!this.check(TokenType.RBRACE)) {
+            do {
+                const name = this.consume(TokenType.IDENTIFIER, 'field name').value;
+                this.consume(TokenType.COLON, ':');
+                const value = this.parseExpression();
+                fields.push({ name, value });
+            } while (this.match(TokenType.COMMA));
+        }
+
+        this.consume(TokenType.RBRACE, '}');
+
+        return {
+            kind: 'StructLiteral',
+            structName,
+            fields,
+            span: { start, end: this.previous().span.end },
+        };
     }
 
     private finishCall(callee: Expression): Expression {

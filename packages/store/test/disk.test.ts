@@ -27,7 +27,7 @@ describe('DiskMerkleTrie', () => {
     it('starts with empty root', async () => {
         const root = EMPTY_TREE_ROOT;
         const val = await trie.get(root, toBytes32(new Uint8Array(32)));
-        expect(val).toBeUndefined();
+        expect(val).toBeNull();
     });
 
     it('can update and get a value', async () => {

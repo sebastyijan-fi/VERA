@@ -15,6 +15,7 @@ import {
     addressValue,
     listValue,
     nullValue,
+    structValue,
     valuesEqual,
     isTruthy,
 } from './value.js';
@@ -598,6 +599,24 @@ export class VirtualMachine {
                 }
                 obj.fields.set(prop, value);
                 this.stack.push(obj);
+                break;
+            }
+
+            case IROpcode.STRUCT_NEW: {
+                const descriptor = (operand as string) || '';
+                const [typeName, fieldsStr] = descriptor.split(':');
+                const fieldNames = fieldsStr ? fieldsStr.split(',') : [];
+                const fields = new Map<string, Value>();
+
+                // Fields are on the stack in order, so pop them in reverse
+                for (let i = fieldNames.length - 1; i >= 0; i--) {
+                    const fieldName = fieldNames[i];
+                    if (fieldName) {
+                        fields.set(fieldName, this.stack.pop());
+                    }
+                }
+
+                this.stack.push(structValue(typeName || 'Unknown', fields));
                 break;
             }
 

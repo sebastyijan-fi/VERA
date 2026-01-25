@@ -7,7 +7,34 @@ import {
     HashDomains,
     encodeCanonicalTransaction,
     signTransaction as signTxCore,
+    encode,
 } from '@vera/core';
+
+// ============================================================================
+// Value Helpers
+// ============================================================================
+
+export class Values {
+    static int(value: bigint | number): any {
+        return { kind: 'int', value: BigInt(value) };
+    }
+
+    static bool(value: boolean): any {
+        return { kind: 'bool', value };
+    }
+
+    static string(value: string): any {
+        return { kind: 'string', value };
+    }
+
+    static bytes(value: Uint8Array): any {
+        return { kind: 'bytes', value };
+    }
+
+    static address(value: string): any {
+        return { kind: 'address', value };
+    }
+}
 
 /**
  * Fluent API for building VERA transactions
@@ -35,6 +62,18 @@ export class TransactionBuilder {
 
     type(moduleId: Bytes32, transactionName: string): this {
         this._type = { moduleId, transactionName };
+        return this;
+    }
+
+    /**
+     * Sets the transaction call arguments.
+     * Automatically encodes the values to CBOR.
+     */
+    call(moduleId: Bytes32, functionName: string, args: any[] = []): this {
+        this._type = { moduleId, transactionName: functionName };
+        // Prepare arguments for CBOR encoding
+        // The VM expects a list of Value objects
+        this._payload = encode(args);
         return this;
     }
 

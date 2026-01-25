@@ -166,7 +166,7 @@ export async function node(
                                 transactionName: txData.type.transactionName,
                             },
                             nonce: nonce,
-                            maxSequence: txData.maxSequence ? BigInt(txData.maxSequence) : undefined,
+                            ...(txData.maxSequence ? { maxSequence: BigInt(txData.maxSequence) } : {}),
                             payload: payloadBytes,
                         });
 

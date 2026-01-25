@@ -3,11 +3,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import pc from 'picocolors';
 import { parse, ParserError } from '@vera/dsl';
-import { typeCheck, TypeCheckError } from '@vera/dsl';
+import { typeCheck } from '@vera/dsl';
 import { compileToIR } from '@vera/dsl';
 
 // Helper to serialize BigInt for JSON output
-function replacer(key: string, value: any) {
+function replacer(_key: string, value: any) {
     if (typeof value === 'bigint') {
         return value.toString();
     }

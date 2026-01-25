@@ -22,7 +22,7 @@
         }
     },
     "scripts": {
-        "build": "tsup",
+        "build": "tsup --tsconfig tsconfig.build.json",
         "dev": "tsup --watch",
         "test": "vitest run",
         "test:watch": "vitest",
