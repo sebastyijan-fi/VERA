@@ -1,0 +1,3 @@
+{"protocol":"vera","version":"1.0.0","chainId":"0x00000000000000000000000000000000000000000000000000000001","type":"header"}
+{"sequence":1,"timestamp":1700000001,"transactions":[{"hash":"0xabc...","nonce":1,"sender":"0x123...","payload":"0x..."}],"stateRoot":"0x2261...","operatorSig":"0x..."}
+{"sequence":2,"timestamp":1700000002,"transactions":[{"hash":"0xdef...","nonce":1,"sender":"0x456...","payload":"0x..."}],"stateRoot":"0xdead...","operatorSig":"0x..."}

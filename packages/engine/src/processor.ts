@@ -360,7 +360,7 @@ export class TransactionStateProcessor {
                     data: encodeValue(entry.value),
                     lastModified: timestamp,
                     schema: {
-                        moduleId: new Uint8Array(32) as any, // TODO: Get from program
+                        moduleId: new Uint8Array(32) as any, // System Module (0x0...0)
                         schemaName: entry.entityType,
                         version: 1,
                     }

@@ -30,7 +30,8 @@ test('Node integration: submission to state commitment', async () => {
         dataDir: TEST_DIR,
         port: TEST_PORT,
         dsl: TEST_DSL,
-        chainId: '0x' + '0'.repeat(64)
+        chainId: '0x' + '0'.repeat(64),
+        exitOnShutdown: false
     });
 
     // Wait for server to start

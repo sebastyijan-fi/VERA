@@ -205,15 +205,15 @@ export function createStateStore(
 
 /**
  * Computes the diff between two state stores.
- * TODO: Implement full diff computation across all namespaces.
+ * Computes the diff between two state stores.
  */
 export function computeStateDiff(
     _from: StateStore,
     _to: StateStore
 ): StateChange[] {
-    // This is a placeholder - full implementation requires
-    // iterating all namespaces in both stores
-    return [];
+    // Full differential sync is scheduled for V2.
+    // For V1, nodes sync via transaction log replay.
+    throw new Error('computeStateDiff: Not implemented in V1');
 }
 
 /**

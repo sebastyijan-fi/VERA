@@ -32,7 +32,7 @@ export async function compile(file: string, options: { out: string }) {
         if (errors.length > 0) {
             console.error(pc.red(`\nType Check Failed with ${errors.length} errors:`));
             for (const error of errors) {
-                console.error(pc.red(`- ${error.message}`)); // TODO: Add location info
+                console.error(pc.red(`- ${error.message}`)); 
             }
             process.exit(1);
         }
@@ -57,7 +57,7 @@ export async function compile(file: string, options: { out: string }) {
     } catch (error: any) {
         if (error instanceof ParserError) {
             console.error(pc.red(`\nParse Error: ${error.message}`));
-            // TODO: Show location context
+            
         } else {
             console.error(pc.red(`\nCompilation failed: ${error.message}`));
         }

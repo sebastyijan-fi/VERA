@@ -27,6 +27,7 @@ export async function node(
         port?: number;
         chainId?: string;
         dsl?: string;
+        exitOnShutdown?: boolean;
     }
 ) {
     const dataDir = path.resolve(options.dataDir || './data');
@@ -238,7 +239,10 @@ export async function node(
             await sequencer.stop();
             await statePersistence.close();
             await seqPersistence.close();
-            process.exit(0);
+            await seqPersistence.close();
+            if (options.exitOnShutdown !== false) {
+                process.exit(0);
+            }
         };
 
         process.on('SIGINT', shutdown);
