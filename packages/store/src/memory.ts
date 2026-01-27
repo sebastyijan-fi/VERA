@@ -36,11 +36,12 @@ function normalizeValue(value: Value): Uint8Array {
 export class MemoryStore implements Store {
     private readonly data = new Map<string, Uint8Array>();
 
-    async put(key: Key, value: Value): Promise<void> {
+    async put(key: Key, value: Value, _options?: any): Promise<void> {
         this.data.set(normalizeKey(key), normalizeValue(value));
+        // Note: MemoryStore ignores options.path-hint
     }
 
-    async get(key: Key): Promise<Value | undefined> {
+    async get(key: Key, _options?: any): Promise<Value | undefined> {
         return this.data.get(normalizeKey(key));
     }
 
@@ -54,6 +55,18 @@ export class MemoryStore implements Store {
 
     iterator(options: IteratorOptions = {}): StoreIterator {
         return new MemoryIterator(this.data, options);
+    }
+
+    snapshot(): Store {
+        const snap = new MemoryStore();
+        for (const [k, v] of this.data.entries()) {
+            (snap as any).data.set(k, v);
+        }
+        return snap;
+    }
+
+    async putWithPath(path: Uint8Array, value: Value, options?: any): Promise<void> {
+        return this.put(path, value, options);
     }
 
     async clear(): Promise<void> {

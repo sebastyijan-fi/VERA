@@ -60,6 +60,7 @@ public transaction EmitEvent() {
   it('enforces gas limit', async () => {
     // Manually construct IR to trap loop easily without source parsing overhead/optimization interference
     const program: IRProgram = {
+      id: '0x' + '0'.repeat(64),
       name: 'LoopTest',
       entities: [],
       events: [],
@@ -107,6 +108,7 @@ public transaction PublicTwo() {
 
   it('validates transactions', async () => {
     const program: IRProgram = {
+      id: '0x' + '0'.repeat(64),
       name: 'ValidTest',
       entities: [],
       events: [],
@@ -128,6 +130,7 @@ public transaction PublicTwo() {
 
   it('provides block context', async () => {
     const program: IRProgram = {
+      id: '0x' + '0'.repeat(64),
       name: 'BlockTest',
       entities: [],
       events: [],

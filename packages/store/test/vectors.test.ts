@@ -48,9 +48,9 @@ describe('Golden Vectors (Determinism)', () => {
         root = await trie.update(root, keyHash, valHash, batch, cache);
         await batch.write();
 
-        // The value below is the actual root produced by the current implementation (SHA256 path compressed).
+        // The value below is the actual root produced by the Hexary Path-Compressed implementation.
         // If this changes, it's a regression (or intentional fork).
-        const EXPECTED_ROOT_1 = '0x919390fd1c71e32d647e940f484b3e9919abcbf38bfbcb25be70f13c20162e9d';
+        const EXPECTED_ROOT_1 = '0xb404b30c8366187c180774e5ced0e3b3a65e4e5528d03f893803882c7b14e50b';
 
         expect(bytesToHex(root)).toBe(EXPECTED_ROOT_1);
     });
@@ -97,5 +97,43 @@ describe('Golden Vectors (Determinism)', () => {
 
         // Must match exactly
         expect(bytesToHex(auditRoot)).toBe(checkpoint);
+    });
+
+    // M12: Byte-Identical Reconstruction (Determinism Knob)
+    it('M12: Byte-Identical Reconstruction (Insertion Order Invariant)', async () => {
+        const { EMPTY_TREE_ROOT } = await import('@vera/core');
+
+        const txs = Array.from({ length: 50 }, (_, i) => ({
+            key: sha256(Buffer.from(`key-${i}`)),
+            value: sha256(Buffer.from(`value-${i}`))
+        }));
+
+        const computeRoot = async (list: typeof txs) => {
+            const store = new MemoryStore();
+            const trie = new DiskMerkleTrie(store);
+            let r = EMPTY_TREE_ROOT;
+            for (const tx of list) {
+                const batch = store.batch();
+                r = await trie.update(r, tx.key, tx.value, batch);
+                await batch.write();
+            }
+            return bytesToHex(r);
+        };
+
+        const root1 = await computeRoot(txs);
+
+        // 1. Repeat N times - must be identical
+        for (let i = 0; i < 5; i++) {
+            const rootN = await computeRoot(txs);
+            expect(rootN).toBe(root1);
+        }
+
+        // 2. Reverse order - MUST be identical in a Merkle Trie
+        const rootReverse = await computeRoot([...txs].reverse());
+        expect(rootReverse).toBe(root1);
+
+        // 3. Shuffled order - MUST be identical
+        const rootShuffled = await computeRoot([...txs].sort(() => Math.random() - 0.5));
+        expect(rootShuffled).toBe(root1);
     });
 });

@@ -1,0 +1,655 @@
+{
+  "meta": {
+    "timestamp": "2026-01-26T19:41:07.135Z",
+    "commit": "e0c608b1b5a82229dd92872849a0edb866976d8f",
+    "nodeVersion": "v22.20.0"
+  },
+  "results": {
+    "REQ-DET-01": {
+      "numTotalTestSuites": 2,
+      "numPassedTestSuites": 2,
+      "numFailedTestSuites": 0,
+      "numPendingTestSuites": 0,
+      "numTotalTests": 2,
+      "numPassedTests": 2,
+      "numFailedTests": 0,
+      "numPendingTests": 0,
+      "numTodoTests": 0,
+      "snapshot": {
+        "added": 0,
+        "failure": false,
+        "filesAdded": 0,
+        "filesRemoved": 0,
+        "filesRemovedList": [],
+        "filesUnmatched": 0,
+        "filesUpdated": 0,
+        "matched": 0,
+        "total": 0,
+        "unchecked": 0,
+        "uncheckedKeysByFile": [],
+        "unmatched": 0,
+        "updated": 0,
+        "didUpdate": false
+      },
+      "startTime": 1769456468165,
+      "success": true,
+      "testResults": [
+        {
+          "assertionResults": [
+            {
+              "ancestorTitles": [
+                "Level 4: Transcript Determinism (Matrix Wave 2)"
+              ],
+              "fullName": "Level 4: Transcript Determinism (Matrix Wave 2) should produce byte-identical transcripts across independent runs",
+              "status": "passed",
+              "title": "should produce byte-identical transcripts across independent runs",
+              "duration": 6371.0619719999995,
+              "failureMessages": [],
+              "meta": {}
+            },
+            {
+              "ancestorTitles": [
+                "Level 4: Transcript Determinism (Matrix Wave 2)"
+              ],
+              "fullName": "Level 4: Transcript Determinism (Matrix Wave 2) should produce different transcripts for slightly different seeds (Sensitivity)",
+              "status": "passed",
+              "title": "should produce different transcripts for slightly different seeds (Sensitivity)",
+              "duration": 1291.2591270000003,
+              "failureMessages": [],
+              "meta": {}
+            }
+          ],
+          "startTime": 1769456468653,
+          "endTime": 1769456476316.259,
+          "status": "passed",
+          "message": "",
+          "name": "/home/sebastyijan/Documents/Projects/VERA/packages/ordering/test/matrix_wave2.test.ts"
+        }
+      ]
+    },
+    "REQ-DET-01-SAFETY": {
+      "numTotalTestSuites": 2,
+      "numPassedTestSuites": 2,
+      "numFailedTestSuites": 0,
+      "numPendingTestSuites": 0,
+      "numTotalTests": 3,
+      "numPassedTests": 3,
+      "numFailedTests": 0,
+      "numPendingTests": 0,
+      "numTodoTests": 0,
+      "snapshot": {
+        "added": 0,
+        "failure": false,
+        "filesAdded": 0,
+        "filesRemoved": 0,
+        "filesRemovedList": [],
+        "filesUnmatched": 0,
+        "filesUpdated": 0,
+        "matched": 0,
+        "total": 0,
+        "unchecked": 0,
+        "uncheckedKeysByFile": [],
+        "unmatched": 0,
+        "updated": 0,
+        "didUpdate": false
+      },
+      "startTime": 1769456477285,
+      "success": true,
+      "testResults": [
+        {
+          "assertionResults": [
+            {
+              "ancestorTitles": [
+                "Level 2: Total Contracts (Error Precedence)"
+              ],
+              "fullName": "Level 2: Total Contracts (Error Precedence) Precedence 1: Integrity (Hash) > Everything",
+              "status": "passed",
+              "title": "Precedence 1: Integrity (Hash) > Everything",
+              "duration": 6.82260500000001,
+              "failureMessages": [],
+              "meta": {}
+            },
+            {
+              "ancestorTitles": [
+                "Level 2: Total Contracts (Error Precedence)"
+              ],
+              "fullName": "Level 2: Total Contracts (Error Precedence) Precedence 2: Pre-Execution (ChainID/Size) > Signature",
+              "status": "passed",
+              "title": "Precedence 2: Pre-Execution (ChainID/Size) > Signature",
+              "duration": 3.1361459999999965,
+              "failureMessages": [],
+              "meta": {}
+            },
+            {
+              "ancestorTitles": [
+                "Level 2: Total Contracts (Error Precedence)"
+              ],
+              "fullName": "Level 2: Total Contracts (Error Precedence) Precedence 3: Signature > State (Nonce)",
+              "status": "passed",
+              "title": "Precedence 3: Signature > State (Nonce)",
+              "duration": 4.872771,
+              "failureMessages": [],
+              "meta": {}
+            }
+          ],
+          "startTime": 1769456477772,
+          "endTime": 1769456477786.8728,
+          "status": "passed",
+          "message": "",
+          "name": "/home/sebastyijan/Documents/Projects/VERA/packages/ordering/test/protocol_safety.test.ts"
+        }
+      ]
+    },
+    "REQ-DET-01-CONCURRENCY": {
+      "numTotalTestSuites": 2,
+      "numPassedTestSuites": 2,
+      "numFailedTestSuites": 0,
+      "numPendingTestSuites": 0,
+      "numTotalTests": 3,
+      "numPassedTests": 3,
+      "numFailedTests": 0,
+      "numPendingTests": 0,
+      "numTodoTests": 0,
+      "snapshot": {
+        "added": 0,
+        "failure": false,
+        "filesAdded": 0,
+        "filesRemoved": 0,
+        "filesRemovedList": [],
+        "filesUnmatched": 0,
+        "filesUpdated": 0,
+        "matched": 0,
+        "total": 0,
+        "unchecked": 0,
+        "uncheckedKeysByFile": [],
+        "unmatched": 0,
+        "updated": 0,
+        "didUpdate": false
+      },
+      "startTime": 1769456478839,
+      "success": true,
+      "testResults": [
+        {
+          "assertionResults": [
+            {
+              "ancestorTitles": [
+                "REQ-DET-01: Adversarial Schedule (Concurrency)"
+              ],
+              "fullName": "REQ-DET-01: Adversarial Schedule (Concurrency) should maintain strict sequence order under concurrent submission",
+              "status": "passed",
+              "title": "should maintain strict sequence order under concurrent submission",
+              "duration": 200.1218,
+              "failureMessages": [],
+              "meta": {}
+            },
+            {
+              "ancestorTitles": [
+                "REQ-DET-01: Adversarial Schedule (Concurrency)"
+              ],
+              "fullName": "REQ-DET-01: Adversarial Schedule (Concurrency) should reject conflicting concurrent nonces deterministically",
+              "status": "passed",
+              "title": "should reject conflicting concurrent nonces deterministically",
+              "duration": 9.31630000000007,
+              "failureMessages": [],
+              "meta": {}
+            },
+            {
+              "ancestorTitles": [
+                "REQ-DET-01: Adversarial Schedule (Concurrency)"
+              ],
+              "fullName": "REQ-DET-01: Adversarial Schedule (Concurrency) should handle race for gap filler",
+              "status": "passed",
+              "title": "should handle race for gap filler",
+              "duration": 13.006676000000084,
+              "failureMessages": [],
+              "meta": {}
+            }
+          ],
+          "startTime": 1769456479349,
+          "endTime": 1769456479571.0066,
+          "status": "passed",
+          "message": "",
+          "name": "/home/sebastyijan/Documents/Projects/VERA/packages/ordering/test/concurrency.test.ts"
+        }
+      ]
+    },
+    "REQ-DET-01-ENGINE": {
+      "numTotalTestSuites": 2,
+      "numPassedTestSuites": 2,
+      "numFailedTestSuites": 0,
+      "numPendingTestSuites": 0,
+      "numTotalTests": 2,
+      "numPassedTests": 2,
+      "numFailedTests": 0,
+      "numPendingTests": 0,
+      "numTodoTests": 0,
+      "snapshot": {
+        "added": 0,
+        "failure": false,
+        "filesAdded": 0,
+        "filesRemoved": 0,
+        "filesRemovedList": [],
+        "filesUnmatched": 0,
+        "filesUpdated": 0,
+        "matched": 0,
+        "total": 0,
+        "unchecked": 0,
+        "uncheckedKeysByFile": [],
+        "unmatched": 0,
+        "updated": 0,
+        "didUpdate": false
+      },
+      "startTime": 1769456480571,
+      "success": true,
+      "testResults": [
+        {
+          "assertionResults": [
+            {
+              "ancestorTitles": [
+                "REQ-DET-01: Engine Replay Determinism (Matrix Wave)"
+              ],
+              "fullName": "REQ-DET-01: Engine Replay Determinism (Matrix Wave) should produce byte-identical transcripts for engine replay",
+              "status": "passed",
+              "title": "should produce byte-identical transcripts for engine replay",
+              "duration": 9.325834999999984,
+              "failureMessages": [],
+              "meta": {}
+            },
+            {
+              "ancestorTitles": [
+                "REQ-DET-01: Engine Replay Determinism (Matrix Wave)"
+              ],
+              "fullName": "REQ-DET-01: Engine Replay Determinism (Matrix Wave) should vary on different inputs",
+              "status": "passed",
+              "title": "should vary on different inputs",
+              "duration": 2.4681289999999763,
+              "failureMessages": [],
+              "meta": {}
+            }
+          ],
+          "startTime": 1769456481141,
+          "endTime": 1769456481152.468,
+          "status": "passed",
+          "message": "",
+          "name": "/home/sebastyijan/Documents/Projects/VERA/packages/engine/test/matrix_wave_engine.test.ts"
+        }
+      ]
+    },
+    "REQ-VER-01-VM": {
+      "numTotalTestSuites": 2,
+      "numPassedTestSuites": 2,
+      "numFailedTestSuites": 0,
+      "numPendingTestSuites": 0,
+      "numTotalTests": 1,
+      "numPassedTests": 1,
+      "numFailedTests": 0,
+      "numPendingTests": 0,
+      "numTodoTests": 0,
+      "snapshot": {
+        "added": 0,
+        "failure": false,
+        "filesAdded": 0,
+        "filesRemoved": 0,
+        "filesRemovedList": [],
+        "filesUnmatched": 0,
+        "filesUpdated": 0,
+        "matched": 0,
+        "total": 0,
+        "unchecked": 0,
+        "uncheckedKeysByFile": [],
+        "unmatched": 0,
+        "updated": 0,
+        "didUpdate": false
+      },
+      "startTime": 1769456482155,
+      "success": true,
+      "testResults": [
+        {
+          "assertionResults": [
+            {
+              "ancestorTitles": [
+                "REQ-VER-01: VM Call Frame Soundness"
+              ],
+              "fullName": "REQ-VER-01: VM Call Frame Soundness should preserve caller stack across nested calls",
+              "status": "passed",
+              "title": "should preserve caller stack across nested calls",
+              "duration": 7.610844000000043,
+              "failureMessages": [],
+              "meta": {}
+            }
+          ],
+          "startTime": 1769456482739,
+          "endTime": 1769456482746.6108,
+          "status": "passed",
+          "message": "",
+          "name": "/home/sebastyijan/Documents/Projects/VERA/packages/engine/test/vm_recursion.test.ts"
+        }
+      ]
+    },
+    "REQ-VER-01-CONT": {
+      "numTotalTestSuites": 2,
+      "numPassedTestSuites": 2,
+      "numFailedTestSuites": 0,
+      "numPendingTestSuites": 0,
+      "numTotalTests": 1,
+      "numPassedTests": 1,
+      "numFailedTests": 0,
+      "numPendingTests": 0,
+      "numTodoTests": 0,
+      "snapshot": {
+        "added": 0,
+        "failure": false,
+        "filesAdded": 0,
+        "filesRemoved": 0,
+        "filesRemovedList": [],
+        "filesUnmatched": 0,
+        "filesUpdated": 0,
+        "matched": 0,
+        "total": 0,
+        "unchecked": 0,
+        "uncheckedKeysByFile": [],
+        "unmatched": 0,
+        "updated": 0,
+        "didUpdate": false
+      },
+      "startTime": 1769456483792,
+      "success": true,
+      "testResults": [
+        {
+          "assertionResults": [
+            {
+              "ancestorTitles": [
+                "REQ-VER-01: Stateful Processor Continuity"
+              ],
+              "fullName": "REQ-VER-01: Stateful Processor Continuity should maintain state across sequential executions",
+              "status": "passed",
+              "title": "should maintain state across sequential executions",
+              "duration": 7.9560319999999365,
+              "failureMessages": [],
+              "meta": {}
+            }
+          ],
+          "startTime": 1769456484365,
+          "endTime": 1769456484372.956,
+          "status": "passed",
+          "message": "",
+          "name": "/home/sebastyijan/Documents/Projects/VERA/packages/engine/test/processor_continuity.test.ts"
+        }
+      ]
+    },
+    "REQ-DET-01-CANONICAL": {
+      "numTotalTestSuites": 2,
+      "numPassedTestSuites": 2,
+      "numFailedTestSuites": 0,
+      "numPendingTestSuites": 0,
+      "numTotalTests": 5,
+      "numPassedTests": 5,
+      "numFailedTests": 0,
+      "numPendingTests": 0,
+      "numTodoTests": 0,
+      "snapshot": {
+        "added": 0,
+        "failure": false,
+        "filesAdded": 0,
+        "filesRemoved": 0,
+        "filesRemovedList": [],
+        "filesUnmatched": 0,
+        "filesUpdated": 0,
+        "matched": 0,
+        "total": 0,
+        "unchecked": 0,
+        "uncheckedKeysByFile": [],
+        "unmatched": 0,
+        "updated": 0,
+        "didUpdate": false
+      },
+      "startTime": 1769456485395,
+      "success": true,
+      "testResults": [
+        {
+          "assertionResults": [
+            {
+              "ancestorTitles": [
+                "REQ-DET-01: Canonical Tx Boundaries"
+              ],
+              "fullName": "REQ-DET-01: Canonical Tx Boundaries should be deterministic regardless of object key creation order",
+              "status": "passed",
+              "title": "should be deterministic regardless of object key creation order",
+              "duration": 4.627479999999991,
+              "failureMessages": [],
+              "meta": {}
+            },
+            {
+              "ancestorTitles": [
+                "REQ-DET-01: Canonical Tx Boundaries"
+              ],
+              "fullName": "REQ-DET-01: Canonical Tx Boundaries should treat explicit undefined optional fields same as omitted",
+              "status": "passed",
+              "title": "should treat explicit undefined optional fields same as omitted",
+              "duration": 0.49505300000004127,
+              "failureMessages": [],
+              "meta": {}
+            },
+            {
+              "ancestorTitles": [
+                "REQ-DET-01: Canonical Tx Boundaries"
+              ],
+              "fullName": "REQ-DET-01: Canonical Tx Boundaries should fail strict equality if BigInt vs Number is mixed (Type Safety)",
+              "status": "passed",
+              "title": "should fail strict equality if BigInt vs Number is mixed (Type Safety)",
+              "duration": 0.2645540000000324,
+              "failureMessages": [],
+              "meta": {}
+            },
+            {
+              "ancestorTitles": [
+                "REQ-DET-01: Canonical Tx Boundaries"
+              ],
+              "fullName": "REQ-DET-01: Canonical Tx Boundaries should handle Uint8Array views deterministically",
+              "status": "passed",
+              "title": "should handle Uint8Array views deterministically",
+              "duration": 0.490271000000007,
+              "failureMessages": [],
+              "meta": {}
+            },
+            {
+              "ancestorTitles": [
+                "REQ-DET-01: Canonical Tx Boundaries"
+              ],
+              "fullName": "REQ-DET-01: Canonical Tx Boundaries should be deterministic across distinct object instances",
+              "status": "passed",
+              "title": "should be deterministic across distinct object instances",
+              "duration": 0.7487879999999905,
+              "failureMessages": [],
+              "meta": {}
+            }
+          ],
+          "startTime": 1769456485751,
+          "endTime": 1769456485758.7488,
+          "status": "passed",
+          "message": "",
+          "name": "/home/sebastyijan/Documents/Projects/VERA/packages/core/test/canonical_tx.test.ts"
+        }
+      ]
+    },
+    "REQ-VER-01-MERKLE": {
+      "numTotalTestSuites": 2,
+      "numPassedTestSuites": 2,
+      "numFailedTestSuites": 0,
+      "numPendingTestSuites": 0,
+      "numTotalTests": 6,
+      "numPassedTests": 6,
+      "numFailedTests": 0,
+      "numPendingTests": 0,
+      "numTodoTests": 0,
+      "snapshot": {
+        "added": 0,
+        "failure": false,
+        "filesAdded": 0,
+        "filesRemoved": 0,
+        "filesRemovedList": [],
+        "filesUnmatched": 0,
+        "filesUpdated": 0,
+        "matched": 0,
+        "total": 0,
+        "unchecked": 0,
+        "uncheckedKeysByFile": [],
+        "unmatched": 0,
+        "updated": 0,
+        "didUpdate": false
+      },
+      "startTime": 1769456486828,
+      "success": true,
+      "testResults": [
+        {
+          "assertionResults": [
+            {
+              "ancestorTitles": [
+                "Proof Self-Containment (Sculpting)"
+              ],
+              "fullName": "Proof Self-Containment (Sculpting) M1: Proofs must be self-contained (Context Independence)",
+              "status": "passed",
+              "title": "M1: Proofs must be self-contained (Context Independence)",
+              "duration": 10.766079000000047,
+              "failureMessages": [],
+              "meta": {}
+            },
+            {
+              "ancestorTitles": [
+                "Proof Self-Containment (Sculpting)"
+              ],
+              "fullName": "Proof Self-Containment (Sculpting) M2: Proof for Key A must NOT verify Key B (Path Integrity)",
+              "status": "passed",
+              "title": "M2: Proof for Key A must NOT verify Key B (Path Integrity)",
+              "duration": 2.4706860000000006,
+              "failureMessages": [],
+              "meta": {}
+            },
+            {
+              "ancestorTitles": [
+                "Proof Self-Containment (Sculpting)"
+              ],
+              "fullName": "Proof Self-Containment (Sculpting) M3: Mangling proof nodes must cause failure (Tamper Resistance)",
+              "status": "passed",
+              "title": "M3: Mangling proof nodes must cause failure (Tamper Resistance)",
+              "duration": 2.18253100000004,
+              "failureMessages": [],
+              "meta": {}
+            },
+            {
+              "ancestorTitles": [
+                "Proof Self-Containment (Sculpting)"
+              ],
+              "fullName": "Proof Self-Containment (Sculpting) M4: Dropping nodes must cause failure (Structure Integrity)",
+              "status": "passed",
+              "title": "M4: Dropping nodes must cause failure (Structure Integrity)",
+              "duration": 1.2854580000000055,
+              "failureMessages": [],
+              "meta": {}
+            },
+            {
+              "ancestorTitles": [
+                "Proof Self-Containment (Sculpting)"
+              ],
+              "fullName": "Proof Self-Containment (Sculpting) M5: Non-membership proofs must also be robust",
+              "status": "passed",
+              "title": "M5: Non-membership proofs must also be robust",
+              "duration": 1.2641450000000418,
+              "failureMessages": [],
+              "meta": {}
+            },
+            {
+              "ancestorTitles": [
+                "Proof Self-Containment (Sculpting)"
+              ],
+              "fullName": "Proof Self-Containment (Sculpting) M11: Value Integrity (Preimage Commitment)",
+              "status": "passed",
+              "title": "M11: Value Integrity (Preimage Commitment)",
+              "duration": 1.1011519999999564,
+              "failureMessages": [],
+              "meta": {}
+            }
+          ],
+          "startTime": 1769456487284,
+          "endTime": 1769456487304.101,
+          "status": "passed",
+          "message": "",
+          "name": "/home/sebastyijan/Documents/Projects/VERA/packages/store/test/proof_sculpting.test.ts"
+        }
+      ]
+    },
+    "REQ-VER-01-BINARY": {
+      "numTotalTestSuites": 2,
+      "numPassedTestSuites": 2,
+      "numFailedTestSuites": 0,
+      "numPendingTestSuites": 0,
+      "numTotalTests": 3,
+      "numPassedTests": 3,
+      "numFailedTests": 0,
+      "numPendingTests": 0,
+      "numTodoTests": 0,
+      "snapshot": {
+        "added": 0,
+        "failure": false,
+        "filesAdded": 0,
+        "filesRemoved": 0,
+        "filesRemovedList": [],
+        "filesUnmatched": 0,
+        "filesUpdated": 0,
+        "matched": 0,
+        "total": 0,
+        "unchecked": 0,
+        "uncheckedKeysByFile": [],
+        "unmatched": 0,
+        "updated": 0,
+        "didUpdate": false
+      },
+      "startTime": 1769456488347,
+      "success": true,
+      "testResults": [
+        {
+          "assertionResults": [
+            {
+              "ancestorTitles": [
+                "REQ-VER-01: Binary Key Injectivity"
+              ],
+              "fullName": "REQ-VER-01: Binary Key Injectivity should be injective for standard inputs",
+              "status": "passed",
+              "title": "should be injective for standard inputs",
+              "duration": 2.4581959999999867,
+              "failureMessages": [],
+              "meta": {}
+            },
+            {
+              "ancestorTitles": [
+                "REQ-VER-01: Binary Key Injectivity"
+              ],
+              "fullName": "REQ-VER-01: Binary Key Injectivity should handle boundary overlaps via length prefixing",
+              "status": "passed",
+              "title": "should handle boundary overlaps via length prefixing",
+              "duration": 0.47563400000001366,
+              "failureMessages": [],
+              "meta": {}
+            },
+            {
+              "ancestorTitles": [
+                "REQ-VER-01: Binary Key Injectivity"
+              ],
+              "fullName": "REQ-VER-01: Binary Key Injectivity should prevent UTF-8 replacement character collision",
+              "status": "passed",
+              "title": "should prevent UTF-8 replacement character collision",
+              "duration": 0.2493170000000191,
+              "failureMessages": [],
+              "meta": {}
+            }
+          ],
+          "startTime": 1769456488769,
+          "endTime": 1769456488772.4756,
+          "status": "passed",
+          "message": "",
+          "name": "/home/sebastyijan/Documents/Projects/VERA/packages/store/test/encoding.test.ts"
+        }
+      ]
+    }
+  }
+}

@@ -9,10 +9,18 @@ import { VirtualMachine, VMError, RequireError, EnsureError, stringValue } from 
 import { encodeValue, prepareForEncoding, restoreFromDecoding } from './vm/codec.js';
 import type { Value } from './vm/value.js';
 import { GasMeter, OutOfGasError } from './gas/index.js';
-import { StateJournal, createExecutionContext, type BlockContext, type ExecutionContext } from './state/index.js';
+import { StateJournal, createExecutionContext, type BlockContext, type ExecutionContext, type AccessSet, type JournalEntry } from './state/index.js';
 import { EventEmitter, type EmittedEvent } from './events.js';
 import { AuditLogger, type AuditLog } from './audit.js';
-import { decode, encode, hexToBytes32, sha256, type StateKey, type StateValue as BinaryStateValue, type StateChange } from '@vera/core';
+import {
+    decode,
+    encode,
+    type StateKey,
+    type StateValue as BinaryStateValue,
+    deriveStateId,
+    hexToBytes32,
+    type StateChange,
+} from '@vera/core';
 
 // ============================================================================
 // Execution Result
@@ -38,8 +46,12 @@ export interface ExecutionResult {
     stateChanges: Map<string, Map<string, Value>>;
     /** Binary state changes for StateStore.apply */
     binaryChanges: StateChange[];
+    /** Journal entries for applying changes */
+    journalEntries?: JournalEntry[] | undefined;
     /** Audit log if enabled */
     auditLog?: AuditLog | undefined;
+    /** Read/Write set for conflict detection */
+    accessSet?: AccessSet | undefined;
 }
 
 /**
@@ -49,6 +61,11 @@ export interface ExecutionError {
     type: 'require' | 'ensure' | 'out_of_gas' | 'runtime' | 'not_found';
     message: string;
     instruction?: number | undefined;
+}
+
+export interface ExecutionOptions {
+    /** Whether to commit changes to state (default: true) */
+    commit?: boolean;
 }
 
 // ============================================================================
@@ -74,6 +91,7 @@ export interface ProcessorOptions {
 export class TransactionStateProcessor {
     private readonly program: IRProgram;
     private readonly options: Required<ProcessorOptions>;
+    private readonly state: Map<string, Map<string, Value>>;
 
     constructor(program: IRProgram, options: ProcessorOptions = {}) {
         this.program = program;
@@ -82,11 +100,10 @@ export class TransactionStateProcessor {
             enableAudit: options.enableAudit ?? false,
             initialState: options.initialState ?? new Map(),
         };
+        // Initialize persistent state
+        this.state = this.cloneState(this.options.initialState);
     }
 
-    /**
-     * Executes a transaction
-     */
     /**
      * Executes a transaction
      */
@@ -94,13 +111,16 @@ export class TransactionStateProcessor {
         functionName: string,
         args: Value[],
         caller: string,
-        block?: Partial<BlockContext>
+        block?: Partial<BlockContext>,
+        execOptions?: ExecutionOptions
     ): Promise<ExecutionResult> {
         // Set up components
         const gas = new GasMeter(this.options.gasLimit);
-        const state = new StateJournal(this.cloneState(this.options.initialState));
+        // Use persistent state as backing store
+        const state = new StateJournal(this.state);
         const events = new EventEmitter();
         const audit = this.options.enableAudit ? new AuditLogger() : undefined;
+        const shouldCommit = execOptions?.commit ?? true;
 
         // Create execution context
         const contextOptions: import('./state/index.js').ExecutionContextOptions = {
@@ -115,7 +135,7 @@ export class TransactionStateProcessor {
 
         // Handle system transactions
         if (functionName.startsWith('system_')) {
-            return this.handleSystemTransaction(functionName, args, context, gas, state, events, audit);
+            return this.handleSystemTransaction(functionName, args, context, gas, state, events, audit, shouldCommit);
         }
 
         // Start audit if enabled
@@ -127,6 +147,8 @@ export class TransactionStateProcessor {
             const result = await vm.execute(functionName, args, context, gas);
 
             if (!result.success) {
+                const accessSet = state.getAccessSet(); // Capture before rollback!
+
                 // Rollback state on failure
                 state.rollback();
 
@@ -135,12 +157,19 @@ export class TransactionStateProcessor {
                     gas.used,
                     result.instructionsExecuted,
                     events.getEvents(),
-                    audit?.finish(false, gas.used, result.error?.message)
+                    audit?.finish(false, gas.used, result.error?.message),
+                    accessSet
                 );
             }
 
-            // Commit state on success
-            state.commit();
+            const binaryChanges = this.translateToBinaryChanges(state, context.block.timestamp);
+            const accessSet = state.getAccessSet();
+            const journalEntries = [...state.getEntries()];
+
+            // Commit state on success if requested
+            if (shouldCommit) {
+                state.commit();
+            }
 
             return {
                 success: true,
@@ -149,8 +178,10 @@ export class TransactionStateProcessor {
                 gasUsed: gas.used,
                 instructionsExecuted: result.instructionsExecuted,
                 stateChanges: this.getStateAsMap(state),
-                binaryChanges: this.translateToBinaryChanges(state, context.block.timestamp),
+                binaryChanges,
+                journalEntries,
                 auditLog: audit?.finish(true, gas.used),
+                accessSet,
             };
         } catch (e) {
             // Rollback on any error
@@ -185,7 +216,7 @@ export class TransactionStateProcessor {
         caller: string,
         block?: Partial<BlockContext>
     ): Promise<{ valid: boolean; gasEstimate: bigint; error?: string | undefined }> {
-        const result = await this.execute(functionName, args, caller, block);
+        const result = await this.execute(functionName, args, caller, block, { commit: false });
         const ret: { valid: boolean; gasEstimate: bigint; error?: string | undefined } = {
             valid: result.success,
             gasEstimate: result.gasUsed,
@@ -194,6 +225,33 @@ export class TransactionStateProcessor {
             ret.error = result.error.message;
         }
         return ret;
+    }
+
+    /**
+     * Returns a snapshot of the current state (underlying map).
+     * Used for seeding worker threads.
+     */
+    getSnapshot(): Map<string, Map<string, Value>> {
+        return this.state;
+    }
+
+    /**
+     * Applies journal entries directly to the persistent state.
+     * Used for committing results from parallel/optimistic execution.
+     */
+    applyJournal(entries: JournalEntry[]): void {
+        for (const entry of entries) {
+            if (entry.type === 'set') {
+                let entityMap = this.state.get(entry.entityType);
+                if (!entityMap) {
+                    entityMap = new Map();
+                    this.state.set(entry.entityType, entityMap);
+                }
+                entityMap.set(entry.key, entry.value);
+            } else if (entry.type === 'delete') {
+                this.state.get(entry.entityType)?.delete(entry.key);
+            }
+        }
     }
 
     /**
@@ -212,16 +270,21 @@ export class TransactionStateProcessor {
         gas: GasMeter,
         state: StateJournal,
         events: EventEmitter,
-        audit?: AuditLogger
+        audit?: AuditLogger,
+        shouldCommit: boolean = true
     ): Promise<ExecutionResult> {
         audit?.start(functionName);
 
         try {
             switch (functionName) {
                 case 'system_upgradeModule': {
-                    // Stub for module upgrade
-                    // In a full implementation, this would update the module IR in state
+                    // Persist upgraded Module IR to system state
                     if (args.length < 1) throw new Error('system_upgradeModule requires IR payload');
+                    const irPayload = args[0]!;
+                    if (irPayload.kind !== 'bytes') throw new Error('IR payload must be bytes');
+
+                    // Store in reserved system namespace
+                    await state.set('__system__:modules', stringValue(this.program.name), irPayload);
                     events.emit('GovernanceUpdate', stringValue(`Module ${this.program.name} upgraded`));
                     break;
                 }
@@ -229,7 +292,11 @@ export class TransactionStateProcessor {
                     throw new Error(`Unknown system transaction: ${functionName}`);
             }
 
-            state.commit();
+            const journalEntries = [...state.getEntries()];
+
+            if (shouldCommit) {
+                state.commit();
+            }
 
             return {
                 success: true,
@@ -239,6 +306,8 @@ export class TransactionStateProcessor {
                 stateChanges: this.getStateAsMap(state),
                 binaryChanges: this.translateToBinaryChanges(state, context.block.timestamp),
                 auditLog: audit?.finish(true, gas.used),
+                accessSet: state.getAccessSet(),
+                journalEntries,
             };
         } catch (e: any) {
             state.rollback();
@@ -251,6 +320,7 @@ export class TransactionStateProcessor {
                 stateChanges: new Map(),
                 binaryChanges: [],
                 auditLog: audit?.finish(false, gas.used, e.message),
+                accessSet: state.getAccessSet(),
             };
         }
     }
@@ -260,7 +330,8 @@ export class TransactionStateProcessor {
         gasUsed: bigint,
         instructionsExecuted: number,
         events: readonly EmittedEvent[],
-        auditLog?: AuditLog
+        auditLog?: AuditLog,
+        accessSet?: AccessSet
     ): ExecutionResult {
         let errorType: ExecutionError['type'] = 'runtime';
         if (vmError instanceof RequireError) {
@@ -288,6 +359,7 @@ export class TransactionStateProcessor {
             stateChanges: new Map(),
             binaryChanges: [],
             auditLog,
+            accessSet,
         };
     }
 
@@ -337,18 +409,9 @@ export class TransactionStateProcessor {
     private translateToBinaryChanges(journal: StateJournal, timestamp: bigint): StateChange[] {
         const changes: StateChange[] = [];
         const entries = journal.getEntries();
-        const encoder = new TextEncoder();
 
         for (const entry of entries) {
-            // Map entity key to 32-byte ID
-            // If the key is a hex address, we use that.
-            // Otherwise we hash the string representation.
-            let id: Uint8Array;
-            if (entry.key.startsWith('0x') && entry.key.length === 66) {
-                id = hexToBytes32(entry.key);
-            } else {
-                id = sha256(encoder.encode(entry.key));
-            }
+            const id = deriveStateId(entry.key);
 
             const stateKey: StateKey = {
                 namespace: entry.entityType,
@@ -360,7 +423,7 @@ export class TransactionStateProcessor {
                     data: encodeValue(entry.value),
                     lastModified: timestamp,
                     schema: {
-                        moduleId: new Uint8Array(32) as any, // System Module (0x0...0)
+                        moduleId: hexToBytes32(this.program.id),
                         schemaName: entry.entityType,
                         version: 1,
                     }

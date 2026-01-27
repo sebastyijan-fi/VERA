@@ -182,6 +182,7 @@ export interface IREvent {
  * Complete IR program
  */
 export interface IRProgram {
+    id: string; // 32-byte hex ID
     name: string;
     entities: IREntity[];
     events: IREvent[];
@@ -191,8 +192,9 @@ export interface IRProgram {
 /**
  * Creates an empty IR program
  */
-export function createIRProgram(name: string): IRProgram {
+export function createIRProgram(name: string, id: string = '0x' + '0'.repeat(64)): IRProgram {
     return {
+        id,
         name,
         entities: [],
         events: [],

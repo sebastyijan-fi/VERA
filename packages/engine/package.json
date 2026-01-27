@@ -22,8 +22,8 @@
         }
     },
     "scripts": {
-        "build": "tsup --tsconfig tsconfig.build.json",
-        "dev": "tsup --watch",
+        "build": "tsup src/index.ts src/parallel/worker.ts --tsconfig tsconfig.build.json --dts --format esm",
+        "dev": "tsup src/index.ts src/parallel/worker.ts --watch --dts --format esm",
         "test": "vitest run",
         "test:watch": "vitest",
         "test:coverage": "vitest run --coverage",
@@ -35,10 +35,29 @@
         "@vera/dsl": "workspace:*"
     },
     "devDependencies": {
+        "@types/node": "^25.0.10",
+        "@vitest/coverage-v8": "3.2.4",
         "tsup": "^8.0.0",
         "typescript": "^5.3.0",
         "vitest": "^3.0.0"
     },
+    "publishConfig": {
+        "access": "public"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/sebastyijan-fi/VERA.git",
+        "directory": "packages/engine"
+    },
+    "keywords": [
+        "vera",
+        "vm",
+        "deterministic",
+        "execution",
+        "merkle",
+        "blockchain"
+    ],
+    "license": "AGPL-3.0-only",
     "files": [
         "dist",
         "src"

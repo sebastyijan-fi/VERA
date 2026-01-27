@@ -52,44 +52,59 @@ export interface Clock {
 // ============================================================================
 // Store Interface
 // ============================================================================
+export interface WriteOptions {
+    /**
+     * If true, ensures the write is persisted to disk before returning.
+     */
+    sync?: boolean;
+
+    /**
+     * Optional hierarchical path hint for locality-aware substrates.
+     */
+    path?: Uint8Array;
+}
 
 /**
  * Abstract Key-Value Store
  */
 export interface Store {
     /**
-     * Puts a value for a key
+     * Puts a value for a key.
      */
-    put(key: Key, value: Value): Promise<void>;
+    put(key: Key, value: Value, options?: WriteOptions): Promise<void>;
 
     /**
-     * Gets a value for a key
-     * Returns undefined if key not found
+     * Gets a value for a key.
      */
     get(key: Key): Promise<Value | undefined>;
 
     /**
-     * Deletes a key
+     * Deletes a key.
      */
     del(key: Key): Promise<void>;
 
     /**
-     * Creates an atomic batch operation
+     * Creates an atomic batch operation.
      */
     batch(): Batch;
 
     /**
-     * Creates an iterator over keys/values
+     * Creates an iterator over keys/values.
      */
     iterator(options?: IteratorOptions): StoreIterator;
 
     /**
-     * Clears the store (mostly for testing)
+     * Creates a point-in-time read-only snapshot of the store.
+     */
+    snapshot(): Store;
+
+    /**
+     * Clears the store.
      */
     clear(): Promise<void>;
 
     /**
-     * Closes the store connection
+     * Closes the store connection.
      */
     close(): Promise<void>;
 }
@@ -97,6 +112,14 @@ export interface Store {
 // ============================================================================
 // Batch Interface
 // ============================================================================
+
+/**
+ * Write options for batches and single puts
+ */
+export interface WriteOptions {
+    /** Whether to sync to physical storage before returning */
+    sync?: boolean;
+}
 
 /**
  * Atomic batch operation
@@ -115,7 +138,7 @@ export interface Batch {
     /**
      * Commits the batch atomically
      */
-    write(): Promise<void>;
+    write(options?: WriteOptions): Promise<void>;
 }
 
 // ============================================================================

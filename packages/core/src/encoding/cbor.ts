@@ -5,30 +5,24 @@
  * Uses cbor-x with configuration for deterministic output.
  */
 
-import { Encoder, decode as cborDecode } from 'cbor-x';
+import { Encoder } from 'cbor-x';
 import type { Bytes } from '../types/primitives.js';
 
 // ============================================================================
 // Encoder Configuration
 // ============================================================================
 
-/**
- * CBOR encoder configured for deterministic output.
- * - Keys are sorted for canonical encoding
- * - Maps preserve insertion order (after sorting)
- */
 const deterministicEncoder = new Encoder({
+    // Disable cbor-x specific extensions for cross-platform/tool compatibility
+    useRecords: false,
+    pack: false,
     // Sort keys in maps for deterministic output
-    structuredClone: true,
+    structuredClone: false,
     // Use canonical CBOR encoding
-    mapsAsObjects: false,
+    mapsAsObjects: true,
     // Preserve bigint as CBOR integer
     largeBigIntToFloat: false,
 });
-
-// ============================================================================
-// Core Encoding Functions
-// ============================================================================
 
 /**
  * Encodes a value to deterministic CBOR bytes
@@ -41,7 +35,7 @@ export function encode(value: unknown): Bytes {
  * Decodes CBOR bytes to a value
  */
 export function decode<T = unknown>(bytes: Bytes): T {
-    return cborDecode(bytes) as T;
+    return deterministicEncoder.decode(bytes) as T;
 }
 
 /**

@@ -1,0 +1,10 @@
+{
+    "logical": {
+        "tps_min": 300,
+        "p99_max_ms": 10
+    },
+    "strict": {
+        "tps_min": 50,
+        "p99_max_ms": 50
+    }
+}

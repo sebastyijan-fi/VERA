@@ -42,6 +42,8 @@ export interface RawTransaction {
     nonce: bigint;
     /** Signature */
     signature: Uint8Array;
+    /** Canonical CBOR bytes (pre-hash) */
+    canonicalTxBytes: Uint8Array;
     /** Timestamp when submitted */
     submittedAt: bigint;
 }
@@ -145,6 +147,7 @@ export function createRawTransaction(
     args: Uint8Array,
     nonce: bigint,
     signature: Uint8Array,
+    canonicalTxBytes: Uint8Array,
     submittedAt: bigint = BigInt(Date.now())
 ): RawTransaction {
     return {
@@ -155,6 +158,7 @@ export function createRawTransaction(
         args,
         nonce,
         signature,
+        canonicalTxBytes,
         submittedAt,
     };
 }

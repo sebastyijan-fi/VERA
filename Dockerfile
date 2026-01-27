@@ -13,8 +13,8 @@ COPY packages/dsl/package.json ./packages/dsl/
 COPY packages/store/package.json ./packages/store/
 COPY packages/engine/package.json ./packages/engine/
 COPY packages/ordering/package.json ./packages/ordering/
-COPY packages/sdk/package.json ./packages/sdk/
-COPY packages/cli/package.json ./packages/cli/
+COPY packages/net/package.json ./packages/net/
+COPY packages/node/package.json ./packages/node/
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile
@@ -37,11 +37,14 @@ COPY --from=builder /app/packages ./packages
 
 # Set environment
 ENV NODE_ENV=production
-ENV PATH="/app/packages/cli/bin:${PATH}"
+ENV PATH="/app/packages/node/dist:${PATH}"
 
-# Expose RPC port
-EXPOSE 8545
+# Expose VERA P2P/API port
+EXPOSE 5001
+
+# Default data directory
+VOLUME /data
 
 # Default command
-ENTRYPOINT ["node", "/app/packages/cli/dist/bin.js"]
-CMD ["node", "--data-dir", "/data"]
+ENTRYPOINT ["node", "/app/packages/node/dist/cli.js"]
+CMD ["run", "--data", "/data"]

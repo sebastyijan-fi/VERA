@@ -4,6 +4,7 @@ export default defineConfig({
     test: {
         globals: true,
         include: ['test/**/*.test.ts'],
+        exclude: ['test/**/*_bench.test.ts'],
         coverage: {
             provider: 'v8',
             reporter: ['text', 'json', 'html'],

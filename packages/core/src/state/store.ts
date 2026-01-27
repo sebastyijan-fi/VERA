@@ -88,7 +88,7 @@ export class InMemoryStateStore implements StateStore {
     /**
      * Applies changes and returns new StateStore
      */
-    apply(changes: readonly StateChange[], newVersion: bigint): StateStore {
+    apply(changes: readonly StateChange[], newVersion: bigint, _options?: any): StateStore {
         // Create new data map with changes applied
         const newData = new Map(this.data);
 

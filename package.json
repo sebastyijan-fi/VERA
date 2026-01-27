@@ -10,7 +10,8 @@
     "test:coverage": "pnpm -r test:coverage",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
-    "clean": "pnpm -r clean"
+    "clean": "pnpm -r clean",
+    "conformance": "pnpm dlx tsx scripts/conformance.ts"
   },
   "keywords": [
     "verifiable",
@@ -25,5 +26,9 @@
   "engines": {
     "node": ">=20.0.0",
     "pnpm": ">=9.0.0"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^3.2.4",
+    "vitest": "3.2.4"
   }
 }

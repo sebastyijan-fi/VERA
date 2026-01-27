@@ -1,0 +1,14 @@
+# VERA Configuration File
+
+# Port to listen on (default: 5001)
+port = 5001
+
+# Directory for state and block storage (default: "./data")
+dataDir = "./data"
+
+# Initial peers to connect to (default: [])
+# peers = ["127.0.0.1:5002", "vera.seed.io:5001"]
+peers = []
+
+# Network identifier (default: "vera-mainnet")
+networkId = "vera-mainnet"

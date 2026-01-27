@@ -10,6 +10,9 @@ out/
 
 # TypeScript
 *.tsbuildinfo
+*.js.map
+*.d.ts.map
+!dist/**/*.d.ts
 
 # Debug logs
 *.log
@@ -26,10 +29,15 @@ test-data-integration/
 __snapshots__
 *.test.js
 *.spec.js
+.vitest-result/
 
 # VERA Specific
 .vera/
 *.db/
+data/
+bench-out/
+benchmarks/
+tests-out/
 
 # Environment variables
 .env
@@ -46,7 +54,9 @@ __snapshots__
 .DS_Store
 Thumbs.db
 .history/
+.pnpm-debug.log
 
 # Temporary
 tmp/
 .tmp/
+.temp/

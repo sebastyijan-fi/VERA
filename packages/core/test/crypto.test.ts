@@ -16,6 +16,7 @@ import {
     getPublicKey,
     sign,
     verify,
+    verifyBatch,
     signTransaction,
     verifyTransactionSignature,
     deriveKeyPairFromSeed,
@@ -132,6 +133,75 @@ describe('Ed25519 Signing', () => {
         expect(sig.publicKey.length).toBe(32);
         expect(sig.signature.length).toBe(64);
         expect(verifyTransactionSignature(sig, txId)).toBe(true);
+    });
+});
+
+describe('Batch Verification', () => {
+    it('verifies empty batch as true', async () => {
+        const result = await verifyBatch([]);
+        expect(result).toBe(true);
+    });
+
+    it('verifies single signature correctly', async () => {
+        const keyPair = generateKeyPair();
+        const message = new TextEncoder().encode('test message');
+        const signature = sign(message, keyPair.privateKey);
+
+        const result = await verifyBatch([
+            { signature, message, publicKey: keyPair.publicKey }
+        ]);
+        expect(result).toBe(true);
+    });
+
+    it('verifies multiple valid signatures', async () => {
+        const items = [];
+        for (let i = 0; i < 10; i++) {
+            const keyPair = generateKeyPair();
+            const message = new TextEncoder().encode(`message ${i}`);
+            const signature = sign(message, keyPair.privateKey);
+            items.push({ signature, message, publicKey: keyPair.publicKey });
+        }
+
+        const result = await verifyBatch(items);
+        expect(result).toBe(true);
+    });
+
+    it('detects invalid signature in batch', async () => {
+        const keyPair1 = generateKeyPair();
+        const keyPair2 = generateKeyPair();
+
+        const message1 = new TextEncoder().encode('message 1');
+        const message2 = new TextEncoder().encode('message 2');
+
+        const sig1 = sign(message1, keyPair1.privateKey);
+        const sig2 = sign(message2, keyPair2.privateKey);
+
+        // Include a valid signature with wrong public key (invalid)
+        const wrongKeyPair = generateKeyPair();
+
+        const result = await verifyBatch([
+            { signature: sig1, message: message1, publicKey: keyPair1.publicKey },
+            { signature: sig2, message: message2, publicKey: wrongKeyPair.publicKey }, // Wrong key!
+        ]);
+        expect(result).toBe(false);
+    });
+
+    it('handles larger batch efficiently', async () => {
+        const items = [];
+        for (let i = 0; i < 50; i++) {
+            const keyPair = generateKeyPair();
+            const message = new TextEncoder().encode(`batch message ${i}`);
+            const signature = sign(message, keyPair.privateKey);
+            items.push({ signature, message, publicKey: keyPair.publicKey });
+        }
+
+        const start = performance.now();
+        const result = await verifyBatch(items);
+        const elapsed = performance.now() - start;
+
+        expect(result).toBe(true);
+        // Just log timing for reference - batch should be reasonably fast
+        console.log(`Batch verification of 50 signatures: ${elapsed.toFixed(2)}ms`);
     });
 });
 

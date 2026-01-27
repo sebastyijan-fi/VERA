@@ -13,8 +13,17 @@ import type { StateAccessor } from './context.js';
 // ============================================================================
 
 export type JournalEntry =
-    | { type: 'set'; entityType: string; key: string; value: Value; previousValue?: Value | undefined }
-    | { type: 'delete'; entityType: string; key: string; previousValue?: Value | undefined };
+    | { type: 'set'; entityType: string; key: string; value: Value }
+    | { type: 'delete'; entityType: string; key: string };
+
+// ============================================================================
+// Read/Write Sets
+// ============================================================================
+
+export interface AccessSet {
+    reads: Set<string>;   // "entityType:key"
+    writes: Set<string>;  // "entityType:key"
+}
 
 // ============================================================================
 // State Journal
@@ -26,11 +35,10 @@ export type JournalEntry =
 export class StateJournal implements StateAccessor {
     private readonly underlying: Map<string, Map<string, Value>>;
     private readonly journal: JournalEntry[] = [];
-    private readonly snapshot: Map<string, Map<string, Value>>;
+    private readonly readSet: Set<string> = new Set();
 
     constructor(initialState: Map<string, Map<string, Value>> = new Map()) {
         this.underlying = initialState;
-        this.snapshot = this.deepClone(initialState);
     }
 
     /**
@@ -38,6 +46,9 @@ export class StateJournal implements StateAccessor {
      */
     async get(entityType: string, key: Value): Promise<Value | undefined> {
         const keyStr = this.keyToString(key);
+        // Record read
+        this.readSet.add(`${entityType}:${keyStr}`);
+
         // Check journal first (reverse order)
         for (let i = this.journal.length - 1; i >= 0; i--) {
             const entry = this.journal[i];
@@ -55,62 +66,37 @@ export class StateJournal implements StateAccessor {
     }
 
     /**
-     * Sets a value in state
+     * Sets a value in state (STAGED)
      */
     async set(entityType: string, key: Value, value: Value): Promise<void> {
         const keyStr = this.keyToString(key);
-        // We need the previous value for rollback, which must be fetched async now if needed.
-        // Optimization: if we are in a transaction, get() checks journal mostly.
-        const previousValue = await this.get(entityType, key);
-
-        // We do NOT update 'underlying' immediately in a journaled approach?
-        // The original code updated 'underlying' AND pushed to journal.
-        // Let's keep the original logic but make it async compatible.
-
-        let entityMap = this.underlying.get(entityType);
-        if (!entityMap) {
-            entityMap = new Map();
-            this.underlying.set(entityType, entityMap);
-        }
-        entityMap.set(keyStr, value);
-
-        const entry: JournalEntry = {
+        // Stage in journal
+        this.journal.push({
             type: 'set',
             entityType,
             key: keyStr,
             value,
-        };
-        if (previousValue !== undefined) {
-            entry.previousValue = previousValue;
-        }
-        this.journal.push(entry);
+        });
     }
 
     /**
-     * Deletes a value from state
+     * Deletes a value from state (STAGED)
      */
     async delete(entityType: string, key: Value): Promise<void> {
         const keyStr = this.keyToString(key);
-        const previousValue = await this.get(entityType, key);
-
-        this.underlying.get(entityType)?.delete(keyStr);
-
-        const entry: JournalEntry = {
+        // Stage in journal
+        this.journal.push({
             type: 'delete',
             entityType,
             key: keyStr,
-        };
-        if (previousValue !== undefined) {
-            entry.previousValue = previousValue;
-        }
-        this.journal.push(entry);
+        });
     }
 
     /**
      * Checks if a key exists
      */
     async exists(entityType: string, key: Value): Promise<boolean> {
-        const value = await this.get(entityType, key);
+        const value = await this.get(entityType, key); // get() records the read
         return value !== undefined;
     }
 
@@ -129,60 +115,57 @@ export class StateJournal implements StateAccessor {
     }
 
     /**
-     * Commits changes (clears journal, keeps state)
+     * Commits changes (applies journal to underlying)
      */
     commit(): void {
-        this.journal.length = 0;
-        // Update snapshot to current state
-        this.snapshot.clear();
-        for (const [entity, values] of this.underlying) {
-            this.snapshot.set(entity, new Map(values));
+        for (const entry of this.journal) {
+            if (entry.type === 'set') {
+                let entityMap = this.underlying.get(entry.entityType);
+                if (!entityMap) {
+                    entityMap = new Map();
+                    this.underlying.set(entry.entityType, entityMap);
+                }
+                entityMap.set(entry.key, entry.value);
+            } else if (entry.type === 'delete') {
+                this.underlying.get(entry.entityType)?.delete(entry.key);
+            }
         }
+        this.journal.length = 0;
+        this.readSet.clear();
     }
 
     /**
-     * Rolls back to snapshot
+     * Rolls back changes (clears journal and read set)
      */
     rollback(): void {
-        this.underlying.clear();
-        for (const [entity, values] of this.snapshot) {
-            this.underlying.set(entity, new Map(values));
-        }
         this.journal.length = 0;
+        this.readSet.clear();
     }
 
     /**
      * Creates a checkpoint for nested rollback
      */
-    checkpoint(): number {
-        return this.journal.length;
+    checkpoint(): { journalIdx: number, readSetSize: number } {
+        return {
+            journalIdx: this.journal.length,
+            readSetSize: this.readSet.size
+        };
     }
 
     /**
-     * Rolls back to a checkpoint
+     * Rolls back to a checkpoint (truncates journal)
+     * Note: Read set rollback is approximate for Set (cannot easily rollback standard Set insertion order without iteration)
+     * For now, we accept read set might be larger than strictly necessary on rollback, or we could rebuild.
+     * Given parallel execution checks happen AFTER execution, keeping the read set is mostly fine or we can optimize later.
      */
-    rollbackTo(checkpoint: number): void {
-        while (this.journal.length > checkpoint) {
-            const entry = this.journal.pop()!;
-            if (entry.type === 'set') {
-                if (entry.previousValue !== undefined) {
-                    let entityMap = this.underlying.get(entry.entityType);
-                    if (entityMap) {
-                        entityMap.set(entry.key, entry.previousValue);
-                    }
-                } else {
-                    this.underlying.get(entry.entityType)?.delete(entry.key);
-                }
-            } else if (entry.type === 'delete') {
-                if (entry.previousValue !== undefined) {
-                    let entityMap = this.underlying.get(entry.entityType);
-                    if (!entityMap) {
-                        entityMap = new Map();
-                        this.underlying.set(entry.entityType, entityMap);
-                    }
-                    entityMap.set(entry.key, entry.previousValue);
-                }
-            }
+    rollbackTo(checkpoint: { journalIdx: number, readSetSize: number } | number): void {
+        if (typeof checkpoint === 'number') {
+            // Legacy support
+            this.journal.length = checkpoint;
+        } else {
+            this.journal.length = checkpoint.journalIdx;
+            // Optimally we would shrink readSet, but JS Set doesn't support generic truncation.
+            // For MVP conflict detection, over-estimating reads (false positives for conflict) is safe (just re-executes).
         }
     }
 
@@ -193,16 +176,22 @@ export class StateJournal implements StateAccessor {
         return this.underlying;
     }
 
-    private keyToString(key: Value): string {
-        return valueToString(key);
+    /**
+     * Gets the read and write sets for conflict detection
+     */
+    getAccessSet(): AccessSet {
+        const writes = new Set<string>();
+        for (const entry of this.journal) {
+            writes.add(`${entry.entityType}:${entry.key}`);
+        }
+        return {
+            reads: new Set(this.readSet),
+            writes
+        };
     }
 
-    private deepClone(state: Map<string, Map<string, Value>>): Map<string, Map<string, Value>> {
-        const clone = new Map<string, Map<string, Value>>();
-        for (const [entity, values] of state) {
-            clone.set(entity, new Map(values));
-        }
-        return clone;
+    private keyToString(key: Value): string {
+        return valueToString(key);
     }
 }
 
@@ -214,3 +203,4 @@ export function createStateJournal(
 ): StateJournal {
     return new StateJournal(initialState);
 }
+

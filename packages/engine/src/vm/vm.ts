@@ -19,7 +19,7 @@ import {
     valuesEqual,
     isTruthy,
 } from './value.js';
-import { Stack, CallStack } from './stack.js';
+import { Stack, CallStack, type CallFrame } from './stack.js';
 import { GasMeter, OutOfGasError } from '../gas/gas.js';
 import type { ExecutionContext } from '../state/context.js';
 import { sha256 } from '@vera/core';
@@ -73,10 +73,8 @@ export class VirtualMachine {
     private readonly program: IRProgram;
     private readonly stack: Stack;
     private readonly callStack: CallStack;
-    private pc = 0; // Program counter
     private halted = false;
     private instructionsExecuted = 0;
-    private readonly labelMap: Map<string, number> = new Map();
 
     constructor(program: IRProgram) {
         this.program = program;
@@ -93,12 +91,6 @@ export class VirtualMachine {
         context: ExecutionContext,
         gas: GasMeter
     ): Promise<VMResult> {
-        // The provided snippet for `execute` and `step` seems to be from a different version
-        // of the VM with different state management (e.g., `this.stack` as array, `this.frames`,
-        // `this.context`, `this.gas` as class properties, `ExecutionResult` type, `createError` method).
-        // To make this change syntactically correct and functional within the existing VM structure,
-        // I will adapt the provided async structure to the current VM's state and methods.
-
         const func = this.program.functions.find(f => f.name === entryPoint);
         if (!func) {
             return {
@@ -109,35 +101,38 @@ export class VirtualMachine {
             };
         }
 
-        // Reset state
+        // Reset state for new execution
         this.stack.clear();
         this.callStack.clear();
-        this.pc = 0;
-        this.halted = false;
         this.instructionsExecuted = 0;
+        this.halted = false;
 
-        // Build label map for jumps
-        this.buildLabelMap(func);
-
-        // Set up initial call frame
-        const locals = new Map<string, Value>();
-        for (let i = 0; i < func.params.length && i < args.length; i++) {
-            locals.set(func.params[i]!, args[i]!);
-        }
-
-        this.callStack.push({
-            functionName: entryPoint,
-            returnAddress: 0,
-            basePointer: 0,
-            locals,
-        });
+        // Push initial frame
+        this.pushFrame(entryPoint, args, 0);
 
         try {
-            while (!this.halted && this.pc < func.instructions.length) {
-                // Check gas before executing
-                gas.consume(this.getOpcodeCost(func.instructions[this.pc]!.opcode));
+            while (!this.halted && this.callStack.depth > 0) {
+                const frame = this.callStack.current()!;
+                const currentFunc = this.program.functions.find(f => f.name === frame.functionName)!;
 
-                await this.step(func, context, gas); // Call the new async step method
+                if (frame.pc >= currentFunc.instructions.length) {
+                    this.callStack.pop();
+                    continue;
+                }
+
+                const inst = currentFunc.instructions[frame.pc]!;
+
+                // Gas check
+                gas.consumeOpcode(inst.opcode);
+
+                // Execute
+                await this.executeInstruction(inst, frame, context);
+
+                // Increment PC (if not jumped/halted)
+                if (!this.halted && this.callStack.current() === frame) {
+                    frame.pc++;
+                }
+                this.instructionsExecuted++;
             }
 
             const result: VMResult = {
@@ -145,14 +140,13 @@ export class VirtualMachine {
                 gasUsed: gas.used,
                 instructionsExecuted: this.instructionsExecuted,
             };
+
             if (!this.stack.isEmpty) {
                 result.returnValue = this.stack.pop();
             }
             return result;
         } catch (e) {
-            if (e instanceof OutOfGasError) {
-                throw e;
-            }
+            if (e instanceof OutOfGasError) throw e;
             if (e instanceof VMError) {
                 return {
                     success: false,
@@ -165,34 +159,41 @@ export class VirtualMachine {
         }
     }
 
-    private buildLabelMap(func: IRFunction): void {
-        this.labelMap.clear();
+    private pushFrame(functionName: string, args: Value[], returnAddress: number): void {
+        const func = this.program.functions.find(f => f.name === functionName);
+        if (!func) throw new VMError(`Function not found: ${functionName}`);
+
+        const locals = new Map<string, Value>();
+        for (let i = 0; i < func.params.length && i < args.length; i++) {
+            locals.set(func.params[i]!, args[i]!);
+        }
+
+        this.callStack.push({
+            functionName,
+            pc: 0,
+            returnAddress,
+            basePointer: this.stack.depth,
+            locals,
+            labelMap: this.buildLabelMap(func),
+        });
+    }
+
+    private buildLabelMap(func: IRFunction): Map<string, number> {
+        const labelMap = new Map<string, number>();
         for (let i = 0; i < func.instructions.length; i++) {
             const inst = func.instructions[i]!;
             if (inst.opcode === IROpcode.NOP && typeof inst.operand === 'string' && inst.operand.startsWith('@')) {
-                this.labelMap.set(inst.operand.slice(1), i);
+                labelMap.set(inst.operand.slice(1), i);
             }
         }
+        return labelMap;
     }
 
-    private async step(func: IRFunction, context: ExecutionContext, gas: GasMeter): Promise<void> {
-        const instruction = func.instructions[this.pc]!;
-        // gas copy is handled in loop now? No, loop calls step.
-        // But loop also had gas check.
-        // Actually the loop in execute calls:
-        // gas.consume(...)
-        // await this.step(...)
-        // So step is responsible for execution only.
-
-        await this.executeInstruction(instruction, context, gas);
-        this.instructionsExecuted++;
-        this.pc++;
-    }
 
     private async executeInstruction(
         instruction: IRInstruction,
-        context: ExecutionContext,
-        gas: GasMeter
+        frame: CallFrame,
+        context: ExecutionContext
     ): Promise<void> {
         const { opcode, operand } = instruction;
 
@@ -216,20 +217,16 @@ export class VirtualMachine {
 
             // Variables
             case IROpcode.LOAD: {
-                const frame = this.callStack.current();
-                if (!frame) throw new VMError('No active call frame', this.pc, 'LOAD');
                 const name = operand as string;
                 const value = frame.locals.get(name);
                 if (value === undefined) {
-                    throw new VMError(`Undefined variable: ${name}`, this.pc, 'LOAD');
+                    throw new VMError(`Undefined variable: ${name}`, frame.pc, 'LOAD');
                 }
                 this.stack.push(value);
                 break;
             }
 
             case IROpcode.STORE: {
-                const frame = this.callStack.current();
-                if (!frame) throw new VMError('No active call frame', this.pc, 'STORE');
                 const name = operand as string;
                 const value = this.stack.pop();
                 frame.locals.set(name, value);
@@ -238,44 +235,44 @@ export class VirtualMachine {
 
             // Arithmetic
             case IROpcode.ADD: {
-                const b = this.popInt();
-                const a = this.popInt();
+                const b = this.popInt(frame.pc);
+                const a = this.popInt(frame.pc);
                 this.stack.push(intValue(a + b));
                 break;
             }
 
             case IROpcode.SUB: {
-                const b = this.popInt();
-                const a = this.popInt();
+                const b = this.popInt(frame.pc);
+                const a = this.popInt(frame.pc);
                 this.stack.push(intValue(a - b));
                 break;
             }
 
             case IROpcode.MUL: {
-                const b = this.popInt();
-                const a = this.popInt();
+                const b = this.popInt(frame.pc);
+                const a = this.popInt(frame.pc);
                 this.stack.push(intValue(a * b));
                 break;
             }
 
             case IROpcode.DIV: {
-                const b = this.popInt();
-                const a = this.popInt();
-                if (b === 0n) throw new VMError('Division by zero', this.pc, 'DIV');
+                const b = this.popInt(frame.pc);
+                const a = this.popInt(frame.pc);
+                if (b === 0n) throw new VMError('Division by zero', frame.pc, 'DIV');
                 this.stack.push(intValue(a / b));
                 break;
             }
 
             case IROpcode.MOD: {
-                const b = this.popInt();
-                const a = this.popInt();
-                if (b === 0n) throw new VMError('Division by zero', this.pc, 'MOD');
+                const b = this.popInt(frame.pc);
+                const a = this.popInt(frame.pc);
+                if (b === 0n) throw new VMError('Division by zero', frame.pc, 'MOD');
                 this.stack.push(intValue(a % b));
                 break;
             }
 
             case IROpcode.NEG: {
-                const a = this.popInt();
+                const a = this.popInt(frame.pc);
                 this.stack.push(intValue(-a));
                 break;
             }
@@ -296,29 +293,29 @@ export class VirtualMachine {
             }
 
             case IROpcode.LT: {
-                const b = this.popInt();
-                const a = this.popInt();
+                const b = this.popInt(frame.pc);
+                const a = this.popInt(frame.pc);
                 this.stack.push(boolValue(a < b));
                 break;
             }
 
             case IROpcode.LTE: {
-                const b = this.popInt();
-                const a = this.popInt();
+                const b = this.popInt(frame.pc);
+                const a = this.popInt(frame.pc);
                 this.stack.push(boolValue(a <= b));
                 break;
             }
 
             case IROpcode.GT: {
-                const b = this.popInt();
-                const a = this.popInt();
+                const b = this.popInt(frame.pc);
+                const a = this.popInt(frame.pc);
                 this.stack.push(boolValue(a > b));
                 break;
             }
 
             case IROpcode.GTE: {
-                const b = this.popInt();
-                const a = this.popInt();
+                const b = this.popInt(frame.pc);
+                const a = this.popInt(frame.pc);
                 this.stack.push(boolValue(a >= b));
                 break;
             }
@@ -347,11 +344,11 @@ export class VirtualMachine {
             // Control flow
             case IROpcode.JMP: {
                 const label = operand as string;
-                const target = this.labelMap.get(label.startsWith('@') ? label.slice(1) : label);
+                const target = frame.labelMap.get(label.startsWith('@') ? label.slice(1) : label);
                 if (target === undefined) {
-                    throw new VMError(`Unknown label: ${label}`, this.pc, 'JMP');
+                    throw new VMError(`Unknown label: ${label}`, frame.pc, 'JMP');
                 }
-                this.pc = target - 1;
+                frame.pc = target - 1;
                 break;
             }
 
@@ -359,11 +356,11 @@ export class VirtualMachine {
                 const condition = this.stack.pop();
                 if (isTruthy(condition)) {
                     const label = operand as string;
-                    const target = this.labelMap.get(label.startsWith('@') ? label.slice(1) : label);
+                    const target = frame.labelMap.get(label.startsWith('@') ? label.slice(1) : label);
                     if (target === undefined) {
-                        throw new VMError(`Unknown label: ${label}`, this.pc, 'JMP_IF');
+                        throw new VMError(`Unknown label: ${label}`, frame.pc, 'JMP_IF');
                     }
-                    this.pc = target - 1;
+                    frame.pc = target - 1;
                 }
                 break;
             }
@@ -372,11 +369,11 @@ export class VirtualMachine {
                 const condition = this.stack.pop();
                 if (!isTruthy(condition)) {
                     const label = operand as string;
-                    const target = this.labelMap.get(label.startsWith('@') ? label.slice(1) : label);
+                    const target = frame.labelMap.get(label.startsWith('@') ? label.slice(1) : label);
                     if (target === undefined) {
-                        throw new VMError(`Unknown label: ${label}`, this.pc, 'JMP_IF_NOT');
+                        throw new VMError(`Unknown label: ${label}`, frame.pc, 'JMP_IF_NOT');
                     }
-                    this.pc = target - 1;
+                    frame.pc = target - 1;
                 }
                 break;
             }
@@ -385,7 +382,7 @@ export class VirtualMachine {
                 const funcName = operand as string;
                 const targetFunc = this.program.functions.find(f => f.name === funcName);
                 if (!targetFunc) {
-                    throw new VMError(`Function not found: ${funcName}`, this.pc, 'CALL');
+                    throw new VMError(`Function not found: ${funcName}`, frame.pc, 'CALL');
                 }
 
                 const argCount = targetFunc.params.length;
@@ -394,24 +391,15 @@ export class VirtualMachine {
                     args.unshift(this.stack.pop());
                 }
 
-                // Recursive async call
-                const result = await this.execute(funcName, args, context, gas);
-                if (!result.success) {
-                    // Propagate error with location info
-                    if (result.error) {
-                        throw result.error; // Already a VMError
-                    }
-                    throw new VMError('Call failed', this.pc, 'CALL');
-                }
-
-                if (result.returnValue) {
-                    this.stack.push(result.returnValue);
-                }
+                // Advance caller PC so we return to the NEXT instruction
+                frame.pc++;
+                this.pushFrame(funcName, args, frame.pc);
                 break;
             }
 
             case IROpcode.RET:
-                this.halted = true;
+                this.callStack.pop();
+                // Return value is left on shared stack
                 break;
 
             // Context
@@ -429,7 +417,7 @@ export class VirtualMachine {
                         this.stack.push(intValue(context.block.height));
                         break;
                     default:
-                        throw new VMError(`Unknown block property: ${prop}`, this.pc, 'CTX_BLOCK');
+                        throw new VMError(`Unknown block property: ${prop}`, frame.pc, 'CTX_BLOCK');
                 }
                 break;
             }
@@ -449,7 +437,6 @@ export class VirtualMachine {
 
             case IROpcode.STATE_SET: {
                 const entityType = operand as string;
-                // Value is top, Key is below
                 const value = this.stack.pop();
                 const key = this.stack.pop();
                 await context.state.set(entityType, key, value);
@@ -477,14 +464,14 @@ export class VirtualMachine {
                 break;
 
             case IROpcode.LIST_GET: {
-                const index = this.popInt();
+                const index = this.popInt(frame.pc);
                 const list = this.stack.pop();
                 if (list.kind !== 'list') {
-                    throw new VMError('Expected list', this.pc, 'LIST_GET');
+                    throw new VMError('Expected list', frame.pc, 'LIST_GET');
                 }
                 const idx = Number(index);
                 if (idx < 0 || idx >= list.elements.length) {
-                    throw new VMError(`Index out of bounds: ${idx}`, this.pc, 'LIST_GET');
+                    throw new VMError(`Index out of bounds: ${idx}`, frame.pc, 'LIST_GET');
                 }
                 this.stack.push(list.elements[idx]!);
                 break;
@@ -492,10 +479,10 @@ export class VirtualMachine {
 
             case IROpcode.LIST_SET: {
                 const value = this.stack.pop();
-                const index = this.popInt();
+                const index = this.popInt(frame.pc);
                 const list = this.stack.pop();
                 if (list.kind !== 'list') {
-                    throw new VMError('Expected list', this.pc, 'LIST_SET');
+                    throw new VMError('Expected list', frame.pc, 'LIST_SET');
                 }
                 const idx = Number(index);
                 list.elements[idx] = value;
@@ -506,7 +493,7 @@ export class VirtualMachine {
             case IROpcode.LIST_LEN: {
                 const list = this.stack.pop();
                 if (list.kind !== 'list') {
-                    throw new VMError('Expected list', this.pc, 'LIST_LEN');
+                    throw new VMError('Expected list', frame.pc, 'LIST_LEN');
                 }
                 this.stack.push(intValue(list.elements.length));
                 break;
@@ -516,7 +503,7 @@ export class VirtualMachine {
                 const value = this.stack.pop();
                 const list = this.stack.pop();
                 if (list.kind !== 'list') {
-                    throw new VMError('Expected list', this.pc, 'LIST_PUSH');
+                    throw new VMError('Expected list', frame.pc, 'LIST_PUSH');
                 }
                 list.elements.push(value);
                 this.stack.push(list);
@@ -532,9 +519,9 @@ export class VirtualMachine {
                 const key = this.stack.pop();
                 const map = this.stack.pop();
                 if (map.kind !== 'map') {
-                    throw new VMError('Expected map', this.pc, 'MAP_GET');
+                    throw new VMError('Expected map', frame.pc, 'MAP_GET');
                 }
-                const keyStr = this.valueToKey(key);
+                const keyStr = this.valueToKey(key, frame.pc);
                 this.stack.push(map.entries.get(keyStr) ?? nullValue());
                 break;
             }
@@ -544,9 +531,9 @@ export class VirtualMachine {
                 const key = this.stack.pop();
                 const map = this.stack.pop();
                 if (map.kind !== 'map') {
-                    throw new VMError('Expected map', this.pc, 'MAP_SET');
+                    throw new VMError('Expected map', frame.pc, 'MAP_SET');
                 }
-                const keyStr = this.valueToKey(key);
+                const keyStr = this.valueToKey(key, frame.pc);
                 map.entries.set(keyStr, value);
                 this.stack.push(map);
                 break;
@@ -556,9 +543,9 @@ export class VirtualMachine {
                 const key = this.stack.pop();
                 const map = this.stack.pop();
                 if (map.kind !== 'map') {
-                    throw new VMError('Expected map', this.pc, 'MAP_DEL');
+                    throw new VMError('Expected map', frame.pc, 'MAP_DEL');
                 }
-                const keyStr = this.valueToKey(key);
+                const keyStr = this.valueToKey(key, frame.pc);
                 map.entries.delete(keyStr);
                 this.stack.push(map);
                 break;
@@ -568,9 +555,9 @@ export class VirtualMachine {
                 const key = this.stack.pop();
                 const map = this.stack.pop();
                 if (map.kind !== 'map') {
-                    throw new VMError('Expected map', this.pc, 'MAP_HAS');
+                    throw new VMError('Expected map', frame.pc, 'MAP_HAS');
                 }
-                const keyStr = this.valueToKey(key);
+                const keyStr = this.valueToKey(key, frame.pc);
                 this.stack.push(boolValue(map.entries.has(keyStr)));
                 break;
             }
@@ -580,11 +567,11 @@ export class VirtualMachine {
                 const prop = operand as string;
                 const obj = this.stack.pop();
                 if (obj.kind !== 'struct') {
-                    throw new VMError('Expected struct', this.pc, 'MEMBER_GET');
+                    throw new VMError('Expected struct', frame.pc, 'MEMBER_GET');
                 }
                 const value = obj.fields.get(prop);
                 if (value === undefined) {
-                    throw new VMError(`Unknown field: ${prop}`, this.pc, 'MEMBER_GET');
+                    throw new VMError(`Unknown field: ${prop}`, frame.pc, 'MEMBER_GET');
                 }
                 this.stack.push(value);
                 break;
@@ -595,7 +582,7 @@ export class VirtualMachine {
                 const value = this.stack.pop();
                 const obj = this.stack.pop();
                 if (obj.kind !== 'struct') {
-                    throw new VMError('Expected struct', this.pc, 'MEMBER_SET');
+                    throw new VMError('Expected struct', frame.pc, 'MEMBER_SET');
                 }
                 obj.fields.set(prop, value);
                 this.stack.push(obj);
@@ -608,7 +595,6 @@ export class VirtualMachine {
                 const fieldNames = fieldsStr ? fieldsStr.split(',') : [];
                 const fields = new Map<string, Value>();
 
-                // Fields are on the stack in order, so pop them in reverse
                 for (let i = fieldNames.length - 1; i >= 0; i--) {
                     const fieldName = fieldNames[i];
                     if (fieldName) {
@@ -624,7 +610,7 @@ export class VirtualMachine {
             case IROpcode.REQUIRE: {
                 const condition = this.stack.pop();
                 if (!isTruthy(condition)) {
-                    throw new RequireError(operand as string, this.pc);
+                    throw new RequireError(operand as string, frame.pc);
                 }
                 break;
             }
@@ -632,7 +618,7 @@ export class VirtualMachine {
             case IROpcode.ENSURE: {
                 const condition = this.stack.pop();
                 if (!isTruthy(condition)) {
-                    throw new EnsureError(operand as string, this.pc);
+                    throw new EnsureError(operand as string, frame.pc);
                 }
                 break;
             }
@@ -656,7 +642,7 @@ export class VirtualMachine {
                 } else if (data.kind === 'string') {
                     bytes = new TextEncoder().encode(data.value);
                 } else {
-                    throw new VMError(`HASH expected bytes or string, got ${data.kind}`, this.pc);
+                    throw new VMError(`HASH expected bytes or string, got ${data.kind}`, frame.pc);
                 }
                 this.stack.push(bytesValue(sha256(bytes)));
                 break;
@@ -668,14 +654,14 @@ export class VirtualMachine {
                 break;
 
             default:
-                throw new VMError(`Unknown opcode: ${opcode}`, this.pc);
+                throw new VMError(`Unknown opcode: ${opcode}`, frame.pc);
         }
     }
 
-    private popInt(): bigint {
+    private popInt(pc: number): bigint {
         const value = this.stack.pop();
         if (value.kind !== 'int') {
-            throw new VMError(`Expected integer, got ${value.kind}`, this.pc);
+            throw new VMError(`Expected integer, got ${value.kind}`, pc);
         }
         return value.value;
     }
@@ -697,7 +683,7 @@ export class VirtualMachine {
         }
     }
 
-    private valueToKey(value: Value): string {
+    private valueToKey(value: Value, pc: number): string {
         switch (value.kind) {
             case 'int':
                 return `i:${value.value}`;
@@ -712,52 +698,17 @@ export class VirtualMachine {
             case 'null':
                 return 'n:';
             case 'list':
-                return `l:[${value.elements.map(e => this.valueToKey(e)).join(',')}]`;
+                return `l:[${value.elements.map(e => this.valueToKey(e, pc)).join(',')}]`;
             case 'map': {
                 const keys = Array.from(value.entries.keys()).sort();
-                return `m:{${keys.map(k => `${k}=${this.valueToKey(value.entries.get(k)!)}`).join(',')}}`;
+                return `m:{${keys.map(k => `${k}=${this.valueToKey(value.entries.get(k)!, pc)}`).join(',')}}`;
             }
             case 'struct': {
                 const keys = Array.from(value.fields.keys()).sort();
-                return `S:${value.type}{${keys.map(k => `${k}=${this.valueToKey(value.fields.get(k)!)}`).join(',')}}`;
+                return `S:${value.type}{${keys.map(k => `${k}=${this.valueToKey(value.fields.get(k)!, pc)}`).join(',')}}`;
             }
             default:
-                throw new VMError(`Unsupported key type: ${(value as any).kind}`, this.pc);
-        }
-    }
-
-    private getOpcodeCost(opcode: IROpcode): bigint {
-        // Basic cost model - will be refined in gas module
-        switch (opcode) {
-            case IROpcode.STATE_GET:
-                return 100n;
-            case IROpcode.STATE_SET:
-                return 500n;
-            case IROpcode.STATE_DEL:
-                return 200n;
-            case IROpcode.STATE_EXISTS:
-                return 50n;
-            case IROpcode.CALL:
-                return 50n;
-            case IROpcode.JMP:
-            case IROpcode.JMP_IF:
-            case IROpcode.JMP_IF_NOT:
-                return 5n;
-            case IROpcode.ADD:
-            case IROpcode.SUB:
-            case IROpcode.MUL:
-            case IROpcode.DIV:
-            case IROpcode.MOD:
-                return 3n;
-            case IROpcode.EQ:
-            case IROpcode.NEQ:
-            case IROpcode.LT:
-            case IROpcode.LTE:
-            case IROpcode.GT:
-            case IROpcode.GTE:
-                return 2n;
-            default:
-                return 1n;
+                throw new VMError(`Unsupported key type: ${(value as any).kind}`, pc);
         }
     }
 }

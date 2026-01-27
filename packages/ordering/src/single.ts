@@ -5,6 +5,13 @@ import {
     toBytes64,
     zeroBytes32,
     verifyTransactionSignature,
+    concat,
+    HashDomains,
+    verifyBatch,
+    sha256WithDomain,
+    SignatureWorkerPool,
+    uint64ToBytes,
+    bytesToUint64,
 } from '@vera/core';
 import type {
     RawTransaction,
@@ -20,6 +27,7 @@ import type { Sequencer } from './sequencer.js';
 import type { Store } from '@vera/store';
 import { TransactionPool, type PoolConfig } from './pool.js';
 import { FinalityTracker, type FinalityConfig } from './finality.js';
+import { TransactionLog, ExecutionStatus, type LogEntry } from './log.js';
 import type { Clock } from './clock.js';
 import { SystemClock } from './clock.js';
 
@@ -38,8 +46,18 @@ export interface SingleSequencerConfig {
     finality?: FinalityConfig | undefined;
     /** Persistence backend */
     store?: Store | undefined;
+    /** Durability mode */
+    durability?: 'strict' | 'logical' | undefined;
     /** Time source */
     clock?: Clock | undefined;
+    /** Parallel signature verification pool */
+    signaturePool?: SignatureWorkerPool | undefined;
+    /** Batching interval in ms (default: 2) */
+    batchTimeout?: number | undefined;
+    /** Maximum transactions per batch (default: 1000) */
+    maxBatchSize?: number | undefined;
+    /** Maximum transactions in submission queue (default: 5000) */
+    maxSubmissionQueueSize?: number | undefined;
 }
 
 // ============================================================================
@@ -56,11 +74,30 @@ export class SingleSequencer implements Sequencer {
     private readonly finality: FinalityTracker;
     private readonly store?: Store;
     private readonly clock: Clock;
+    private readonly durability: 'strict' | 'logical';
+    private readonly signaturePool: SignatureWorkerPool | undefined;
     private readonly sequenced: Map<string, OrderedTransaction> = new Map();
     private readonly txCallbacks: Set<TransactionCallback> = new Set();
     private readonly nonces: Map<string, bigint> = new Map();
+    private readonly log?: TransactionLog;
     private nextSequence: SequenceNumber = 1n;
     private isActive = false;
+
+    // Phase 2: Performance Caches
+    private readonly signatureCache: Map<string, boolean> = new Map(); // txId hex -> isValid
+    private readonly metadataCache: Map<string, RawTransaction> = new Map(); // txId hex -> cached metadata
+
+    // Phase 2: Batching
+    private readonly submissionQueue: { tx: RawTransaction, resolve: (r: SubmitResult) => void, reject: (err: any) => void }[] = [];
+    private readonly batchTimeout: number;
+    private readonly maxBatchSize: number;
+    private readonly maxSubmissionQueueSize: number;
+    private flushTimer: NodeJS.Timeout | null = null;
+
+    // Backpressure Config (Hardcoded for now)
+    private readonly MAX_MEMPOOL_SIZE = 10000;
+    private readonly MAX_EXECUTION_BACKLOG = 5000;
+    private readonly MAX_TX_SIZE = 1 * 1024 * 1024; // 1MB
 
     constructor(config: SingleSequencerConfig = {}) {
         this.id = config.id ?? 'single-sequencer';
@@ -68,97 +105,217 @@ export class SingleSequencer implements Sequencer {
         this.pool = new TransactionPool(config.pool);
         this.finality = new FinalityTracker(config.finality);
         this.clock = config.clock ?? new SystemClock();
+        this.durability = config.durability ?? 'logical';
+        this.signaturePool = config.signaturePool;
+        this.batchTimeout = config.batchTimeout ?? 2;
+        this.maxBatchSize = config.maxBatchSize ?? 1000;
+        this.maxSubmissionQueueSize = config.maxSubmissionQueueSize ?? 5000;
         if (config.store) {
             this.store = config.store;
+            this.log = new TransactionLog(config.store);
         }
+    }
+
+    /**
+     * Records an execution receipt for a transaction
+     */
+    async recordReceipt(seq: SequenceNumber, success: boolean): Promise<void> {
+        if (this.store && this.log) {
+            const batch = this.store.batch();
+            this.log.recordReceipt(
+                batch,
+                seq,
+                success ? ExecutionStatus.EXEC_OK : ExecutionStatus.EXEC_FAIL
+            );
+            await batch.write({ sync: this.durability === 'strict' });
+        }
+    }
+
+    /**
+     * Replays the log for a given sequence range
+     */
+    async replay(
+        start: SequenceNumber,
+        end: SequenceNumber,
+        callback: (entry: LogEntry, receipt: ExecutionStatus) => Promise<void>
+    ): Promise<void> {
+        if (!this.log) return;
+
+        for (let seq = start; seq <= end; seq++) {
+            const entry = await this.log.getEntry(seq);
+            if (!entry) throw new Error(`Log entry missing for sequence #${seq}`);
+
+            const receipt = await this.log.getReceipt(seq);
+            if (receipt === undefined) throw new Error(`Execution receipt missing for sequence #${seq}`);
+
+            await callback(entry, receipt);
+        }
+    }
+
+    async getReceiptByTxId(txId: Bytes32): Promise<{ sequenceNumber: SequenceNumber; status: ExecutionStatus } | undefined> {
+        if (!this.log) return undefined;
+        const seq = await this.log.getSeqByTxId(txId);
+        if (seq === undefined) return undefined;
+        const status = await this.log.getReceipt(seq);
+        if (status === undefined) return undefined;
+        return { sequenceNumber: seq, status };
     }
 
     async submit(tx: RawTransaction): Promise<SubmitResult> {
-        if (!this.isActive) {
+        if (this.submissionQueue.length >= this.maxSubmissionQueueSize) {
             return {
+                accepted: false,
+                hash: tx.hash,
+                error: `Backpressure: Submission queue full (${this.submissionQueue.length})`
+            };
+        }
+
+        return new Promise<SubmitResult>((resolve, reject) => {
+            this.submissionQueue.push({ tx, resolve, reject });
+
+            if (this.submissionQueue.length >= this.maxBatchSize) {
+                this.triggerFlush(true);
+            } else if (!this.flushTimer) {
+                this.triggerFlush(false);
+            }
+        });
+    }
+
+    private triggerFlush(immediate: boolean) {
+        if (this.flushTimer) {
+            clearTimeout(this.flushTimer);
+            this.flushTimer = null;
+        }
+
+        if (immediate) {
+            void this.flushQueue();
+        } else {
+            this.flushTimer = setTimeout(() => {
+                this.flushTimer = null;
+                void this.flushQueue();
+            }, this.batchTimeout);
+        }
+    }
+
+    private async flushQueue() {
+        if (this.submissionQueue.length === 0) return;
+
+        const batch = this.submissionQueue.splice(0, this.maxBatchSize);
+        const txs = batch.map(b => b.tx);
+
+        try {
+            const results = await this.submitMany(txs);
+            for (let i = 0; i < batch.length; i++) {
+                const item = batch[i];
+                const res = results[i];
+                if (item && res) {
+                    item.resolve(res);
+                } else if (item) {
+                    item.reject(new Error('No result for transaction in batch'));
+                }
+            }
+        } catch (err) {
+            for (const item of batch) {
+                item.reject(err);
+            }
+        }
+    }
+
+    private processing: Promise<void> = Promise.resolve();
+
+    async submitMany(txs: RawTransaction[]): Promise<SubmitResult[]> {
+        // Serialize submissions to prevent race conditions with nonces and pool
+        const result = await new Promise<SubmitResult[]>((resolve, reject) => {
+            this.processing = this.processing.then(async () => {
+                try {
+                    const res = await this._submitMany(txs);
+                    resolve(res);
+                } catch (err) {
+                    reject(err);
+                }
+            });
+        });
+        return result;
+    }
+
+    private async _submitMany(txs: RawTransaction[]): Promise<SubmitResult[]> {
+        if (!this.isActive) {
+            return txs.map(tx => ({
                 accepted: false,
                 hash: tx.hash,
                 error: 'Sequencer not active',
-            };
+            }));
         }
 
-        // 1. Verify Chain ID
-        if (!bytesEqual(tx.chainId, this.chainId)) {
-            return {
-                accepted: false,
-                hash: tx.hash,
-                error: `Invalid chain ID: expected ${bytesToHex(this.chainId)}, got ${bytesToHex(tx.chainId)}`,
-            };
+        const results: SubmitResult[] = new Array(txs.length);
+        const dirtyNonces: Set<string> = new Set();
+        const toVerify: { tx: RawTransaction; index: number }[] = [];
+        const toSequence: { tx: RawTransaction; index: number }[] = [];
+
+        // Backpressure Check
+        if (this.pool.size + txs.length > this.MAX_MEMPOOL_SIZE) {
+            return txs.map(tx => ({ accepted: false, hash: tx.hash, error: 'Backpressure: Mempool full' }));
         }
 
-        // 2. Verify Signature
-        const signature = {
-            publicKey: tx.sender,
-            signature: toBytes64(tx.signature),
-            signedFields: ['version', 'chainId', 'type', 'nonce', 'maxSequence', 'payload'], // Default canonical fields
-        };
-
-        if (!verifyTransactionSignature(signature, tx.hash)) {
-            return {
-                accepted: false,
-                hash: tx.hash,
-                error: 'Invalid signature',
-            };
+        const currentBacklog = Number(this.nextSequence - 1n) - this.finality.finalizedCount;
+        if (currentBacklog > this.MAX_EXECUTION_BACKLOG) {
+            return txs.map(tx => ({ accepted: false, hash: tx.hash, error: `Backpressure: Execution backlog too high (${currentBacklog})` }));
         }
 
-        // 3. Verify Nonce
-        const senderKey = bytesToHex(tx.sender);
-        const currentNonce = this.nonces.get(senderKey) ?? 0n;
-        if (tx.nonce <= currentNonce) {
-            return {
-                accepted: false,
-                hash: tx.hash,
-                error: `Nonce too low: current ${currentNonce}, got ${tx.nonce}`,
-            };
-        }
-        if (tx.nonce > currentNonce + 1n) {
-            return {
-                accepted: false,
-                hash: tx.hash,
-                error: `Nonce too high (gap): current ${currentNonce}, expected ${currentNonce + 1n}, got ${tx.nonce}`,
-            };
+        // TIER 1: Cheap Fixed Checks & Cache Hits
+        const batchNonces = new Map<string, bigint>();
+
+        const { toVerify: toVerifyNew } = this._performInitialChecks(txs, results, batchNonces, dirtyNonces, toSequence);
+        toVerify.push(...toVerifyNew);
+
+        // TIER 2: Batch Signature Verification & Delayed Checks
+        if (toVerify.length > 0) {
+            await this._verifySignatures(toVerify, results, batchNonces, dirtyNonces, toSequence);
         }
 
-        // Check for duplicate hash
-        const hashKey = this.hashToKey(tx.hash);
-        if (this.sequenced.has(hashKey) || this.pool.has(tx.hash)) {
-            return {
-                accepted: false,
-                hash: tx.hash,
-                error: 'Duplicate transaction',
-            };
+        // POOL & SEQUENCE
+        if (toSequence.length > 0) {
+            // Re-sort to maintain original arrival order
+            const sortedSequence = toSequence.sort((a, b) => a.index - b.index);
+
+            for (const s of sortedSequence) {
+                const hashHex = bytesToHex(s.tx.hash, false);
+                this.metadataCache.set(hashHex, s.tx); // Cache validated metadata
+
+                if (this.pool.add(s.tx)) {
+                    results[s.index] = { accepted: true, hash: s.tx.hash };
+                } else {
+                    results[s.index] = { accepted: false, hash: s.tx.hash, error: 'Pool full' };
+                }
+            }
+
+            // Trigger sequencing for accepted transactions
+            const acceptedTxs = sortedSequence.filter(s => results[s.index]?.accepted).map(s => s.tx);
+            if (acceptedTxs.length > 0) {
+                const orderedList = await this.sequenceBatch(acceptedTxs, dirtyNonces);
+                // Update sequence numbers in results
+                let orderedIdx = 0;
+                for (const s of sortedSequence) {
+                    if (results[s.index]?.accepted) {
+                        const ordered = orderedList[orderedIdx++];
+                        if (ordered) {
+                            results[s.index] = {
+                                accepted: true,
+                                hash: ordered.tx.hash,
+                                sequenceNumber: ordered.sequenceNumber,
+                            };
+                        }
+                    }
+                }
+            }
         }
 
-        // Add to pool
-        if (!this.pool.add(tx)) {
-            return {
-                accepted: false,
-                hash: tx.hash,
-                error: 'Pool full',
-            };
-        }
-
-        // 4. Update Nonce
-        this.nonces.set(senderKey, tx.nonce);
-
-        // Immediately sequence (single sequencer mode)
-        const ordered = this.sequenceTransaction(tx);
-
-        return {
-            accepted: true,
-            hash: tx.hash,
-            sequenceNumber: ordered.sequenceNumber,
-        };
+        return results;
     }
 
     async getNext(): Promise<OrderedTransaction | undefined> {
-        // Return the next pending finalization
         const pending = this.finality.getPending();
+        if (pending.length === 0) return undefined;
         return pending.sort((a, b) => Number(a.sequenceNumber - b.sequenceNumber))[0];
     }
 
@@ -214,6 +371,9 @@ export class SingleSequencer implements Sequencer {
 
         if (this.store) {
             await this.loadState(this.store);
+            if (this.log) {
+                await this.log.open();
+            }
         }
 
         this.isActive = true;
@@ -227,9 +387,6 @@ export class SingleSequencer implements Sequencer {
         this.finality.stopAutoFinalize();
     }
 
-    /**
-     * Clears all state (for testing)
-     */
     clear(): void {
         this.pool.clear();
         this.finality.clear();
@@ -238,36 +395,67 @@ export class SingleSequencer implements Sequencer {
         this.nextSequence = 1n;
     }
 
-    private sequenceTransaction(tx: RawTransaction): OrderedTransaction {
-        // Remove from pool (should already be there if we called this from submit)
-        this.pool.remove(tx.hash);
+    private async sequenceBatch(txs: RawTransaction[], dirtyNonces: Set<string>): Promise<OrderedTransaction[]> {
+        const orderedList: OrderedTransaction[] = [];
 
-        // Create ordered transaction
-        const ordered: OrderedTransaction = {
-            tx,
-            sequenceNumber: this.nextSequence++,
-            sequencedAt: BigInt(this.clock.now()),
-            finality: 'sequenced',
-        };
+        for (const tx of txs) {
+            this.pool.remove(tx.hash);
 
-        // Store
-        const hashKey = this.hashToKey(tx.hash);
-        this.sequenced.set(hashKey, ordered);
-        this.sequenced.set(ordered.sequenceNumber.toString(), ordered);
+            const ordered: OrderedTransaction = {
+                tx,
+                sequenceNumber: this.nextSequence++,
+                sequencedAt: BigInt(this.clock.now()),
+                finality: 'sequenced',
+            };
 
-        // Track finality
-        this.finality.track(ordered);
+            const hashKey = this.hashToKey(tx.hash);
+            this.sequenced.set(hashKey, ordered);
+            this.sequenced.set(ordered.sequenceNumber.toString(), ordered);
 
-        // Emit to subscribers
-        this.emitTransaction(ordered);
-
-        if (this.store) {
-            this.saveState(this.store).catch(err => {
-                console.error('Failed to save sequencer state:', err);
-            });
+            this.finality.track(ordered);
+            this.emitTransaction(ordered);
+            orderedList.push(ordered);
         }
 
-        return ordered;
+        if (this.store) {
+            // Atomic update of log and sequencer metadata
+            const batch = this.store.batch();
+
+            // 1. Update sequence number
+            batch.put('sequencer:next_sequence', uint64ToBytes(this.nextSequence));
+
+            // 2. Update nonces
+            for (const address of dirtyNonces) {
+                const nonce = this.nonces.get(address);
+                if (nonce !== undefined) {
+                    batch.put(`sequencer:nonce:${address}`, uint64ToBytes(nonce));
+                }
+            }
+
+            // 3. Append to log
+            if (this.log) {
+                for (const ordered of orderedList) {
+                    this.log.append(batch, {
+                        seq: ordered.sequenceNumber,
+                        txId: ordered.tx.hash,
+                        sender: ordered.tx.sender,
+                        nonce: ordered.tx.nonce,
+                        chainId: ordered.tx.chainId,
+                        canonicalTxBytes: ordered.tx.canonicalTxBytes,
+                    });
+                }
+            }
+
+            // 4. Commit batch
+            try {
+                await batch.write({ sync: this.durability === 'strict' });
+            } catch (err) {
+                console.error('Failed to commit ordering batch:', err);
+                throw err; // Propagate error so submission fails
+            }
+        }
+
+        return orderedList;
     }
 
     private emitTransaction(tx: OrderedTransaction): void {
@@ -282,14 +470,11 @@ export class SingleSequencer implements Sequencer {
 
     private async loadState(store: Store): Promise<void> {
         try {
-            // Load sequence number
             const seqBytes = await store.get('sequencer:next_sequence');
             if (seqBytes) {
-                const seqStr = Buffer.from(seqBytes).toString('utf-8');
-                this.nextSequence = BigInt(seqStr);
+                this.nextSequence = bytesToUint64(seqBytes);
             }
 
-            // Load nonces
             const iterator = store.iterator({
                 gte: 'sequencer:nonce:',
                 lte: 'sequencer:nonce:\uffff'
@@ -302,7 +487,7 @@ export class SingleSequencer implements Sequencer {
 
                     const keyStr = typeof entry[0] === 'string' ? entry[0] : Buffer.from(entry[0]).toString('utf-8');
                     const addressHex = keyStr.replace('sequencer:nonce:', '');
-                    const nonce = BigInt(Buffer.from(entry[1]).toString('utf-8'));
+                    const nonce = bytesToUint64(entry[1]);
                     this.nonces.set(addressHex, nonce);
                 }
             } finally {
@@ -310,30 +495,170 @@ export class SingleSequencer implements Sequencer {
             }
 
         } catch (error) {
-            // Ignore missing state on first run
+            // Ignore missing state
         }
-    }
-
-    private async saveState(store: Store): Promise<void> {
-        const batch = store.batch();
-        batch.put('sequencer:next_sequence', Buffer.from(this.nextSequence.toString()));
-
-        // Save all nonces
-        for (const [address, nonce] of this.nonces) {
-            batch.put(`sequencer:nonce:${address}`, Buffer.from(nonce.toString()));
-        }
-
-        await batch.write();
     }
 
     private hashToKey(hash: Uint8Array): string {
         return bytesToHex(hash, false);
     }
+
+    private _performInitialChecks(
+        txs: RawTransaction[],
+        results: SubmitResult[],
+        batchNonces: Map<string, bigint>,
+        dirtyNonces: Set<string>,
+        toSequence: { tx: RawTransaction; index: number }[]
+    ): { toVerify: { tx: RawTransaction; index: number }[] } {
+        const toVerify: { tx: RawTransaction; index: number }[] = [];
+
+        for (let i = 0; i < txs.length; i++) {
+            const tx = txs[i]!;
+            const hashHex = bytesToHex(tx.hash, false);
+            const senderKey = bytesToHex(tx.sender, false);
+
+            // 0. Size Check
+            if (tx.canonicalTxBytes.length > this.MAX_TX_SIZE) {
+                results[i] = { accepted: false, hash: tx.hash, error: `Transaction too large: ${tx.canonicalTxBytes.length} > ${this.MAX_TX_SIZE}` };
+                continue;
+            }
+
+            // 1. Integrity Check: Hash must match canonical bytes
+            const expectedHash = sha256WithDomain(HashDomains.TRANSACTION, tx.canonicalTxBytes);
+            if (!bytesEqual(tx.hash, expectedHash)) {
+                results[i] = { accepted: false, hash: tx.hash, error: 'Invalid transaction hash' };
+                continue;
+            }
+
+            // 2. Chain ID Match
+            if (!bytesEqual(tx.chainId, this.chainId)) {
+                results[i] = { accepted: false, hash: tx.hash, error: 'Invalid chain ID' };
+                continue;
+            }
+
+            // 2. Signature Cache Check (Precedence: Proof of identity before state check)
+            if (this.signatureCache.get(hashHex) === true) {
+                // Signature is known good. Safe to check nonces.
+                const currentNonce = batchNonces.get(senderKey) ?? (this.nonces.get(senderKey) ?? 0n);
+
+                if (tx.nonce <= currentNonce) {
+                    results[i] = { accepted: false, hash: tx.hash, error: 'Nonce too low' };
+                    continue;
+                }
+
+                if (tx.nonce > currentNonce + 1n) {
+                    results[i] = { accepted: false, hash: tx.hash, error: `Nonce too high (gap): ${tx.nonce} > ${currentNonce + 1n}` };
+                    continue;
+                }
+
+                if (this.sequenced.has(hashHex) || this.pool.has(tx.hash)) {
+                    results[i] = { accepted: false, hash: tx.hash, error: 'Duplicate transaction' };
+                    continue;
+                }
+
+                // Accept
+                batchNonces.set(senderKey, tx.nonce);
+                this.nonces.set(senderKey, tx.nonce);
+                dirtyNonces.add(senderKey);
+                toSequence.push({ tx, index: i });
+                continue;
+            }
+
+            // Signature miss. Delay nonce check until TIER 2.
+            toVerify.push({ tx, index: i });
+        }
+        return { toVerify };
+    }
+
+    private async _verifySignatures(
+        toVerify: { tx: RawTransaction; index: number }[],
+        results: SubmitResult[],
+        batchNonces: Map<string, bigint>,
+        dirtyNonces: Set<string>,
+        toSequence: { tx: RawTransaction; index: number }[]
+    ): Promise<void> {
+        const batchItems = toVerify.map(v => ({
+            signature: toBytes64(v.tx.signature),
+            message: concat(HashDomains.SIGNATURE, v.tx.hash),
+            publicKey: v.tx.sender
+        }));
+
+        const batchOk = await verifyBatch(batchItems, this.signaturePool);
+
+        if (batchOk) {
+            // All signatures are valid. Now perform nonce/dedupe checks.
+            for (const v of toVerify) {
+                const hashHex = bytesToHex(v.tx.hash, false);
+                const senderKey = bytesToHex(v.tx.sender, false);
+                const currentNonce = batchNonces.get(senderKey) ?? (this.nonces.get(senderKey) ?? 0n);
+
+                if (v.tx.nonce <= currentNonce) {
+                    results[v.index] = { accepted: false, hash: v.tx.hash, error: 'Nonce too low' };
+                    continue;
+                }
+
+                if (v.tx.nonce > currentNonce + 1n) {
+                    results[v.index] = { accepted: false, hash: v.tx.hash, error: `Nonce too high (gap): ${v.tx.nonce} > ${currentNonce + 1n}` };
+                    continue;
+                }
+
+                if (this.sequenced.has(hashHex) || this.pool.has(v.tx.hash)) {
+                    results[v.index] = { accepted: false, hash: v.tx.hash, error: 'Duplicate transaction' };
+                    continue;
+                }
+
+                // Success
+                this.signatureCache.set(hashHex, true);
+                this.nonces.set(senderKey, v.tx.nonce);
+                batchNonces.set(senderKey, v.tx.nonce);
+                dirtyNonces.add(senderKey);
+                toSequence.push(v);
+            }
+        } else {
+            // Fallback: Individual Verification (Isolate bad actors and maintain precedence)
+            for (const v of toVerify) {
+                const signature = {
+                    publicKey: v.tx.sender,
+                    signature: toBytes64(v.tx.signature),
+                    signedFields: ['version', 'chainId', 'type', 'nonce', 'maxSequence', 'payload'],
+                };
+
+                if (!verifyTransactionSignature(signature, v.tx.hash)) {
+                    results[v.index] = { accepted: false, hash: v.tx.hash, error: 'Invalid signature' };
+                    continue;
+                }
+
+                // Signature is GOOD. Now check nonces.
+                const hashHex = bytesToHex(v.tx.hash, false);
+                const senderKey = bytesToHex(v.tx.sender, false);
+                const currentNonce = batchNonces.get(senderKey) ?? (this.nonces.get(senderKey) ?? 0n);
+
+                if (v.tx.nonce <= currentNonce) {
+                    results[v.index] = { accepted: false, hash: v.tx.hash, error: 'Nonce too low' };
+                    continue;
+                }
+
+                if (v.tx.nonce > currentNonce + 1n) {
+                    results[v.index] = { accepted: false, hash: v.tx.hash, error: `Nonce too high (gap): ${v.tx.nonce} > ${currentNonce + 1n}` };
+                    continue;
+                }
+
+                if (this.sequenced.has(hashHex) || this.pool.has(v.tx.hash)) {
+                    results[v.index] = { accepted: false, hash: v.tx.hash, error: 'Duplicate transaction' };
+                    continue;
+                }
+
+                // Success
+                this.signatureCache.set(hashHex, true);
+                this.nonces.set(senderKey, v.tx.nonce);
+                batchNonces.set(senderKey, v.tx.nonce);
+                dirtyNonces.add(senderKey);
+                toSequence.push(v);
+            }
+        }
+    }
 }
 
-/**
- * Creates a new single sequencer
- */
 export function createSingleSequencer(config?: SingleSequencerConfig): SingleSequencer {
     return new SingleSequencer(config);
 }

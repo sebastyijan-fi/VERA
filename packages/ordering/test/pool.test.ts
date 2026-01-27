@@ -11,11 +11,12 @@ describe('TransactionPool', () => {
         return createRawTransaction(
             hash,
             new Uint8Array(32).fill(0) as any, // chainId
-            new Uint8Array(20).fill(1) as any, // sender
+            new Uint8Array(32).fill(1) as any, // sender
             'test',
             new Uint8Array(),
             BigInt(i), // nonce
-            new Uint8Array(64) // signature
+            new Uint8Array(64), // signature
+            new Uint8Array() // canonicalTxBytes
         );
     };
 

@@ -1,0 +1,36 @@
+{
+    "name": "@vera/bench",
+    "version": "0.1.0",
+    "private": true,
+    "description": "Performance benchmarking suite for VERA",
+    "type": "module",
+    "scripts": {
+        "bench:engine": "tsx src/engine.bench.ts",
+        "bench:sequencer": "tsx src/sequencer.bench.ts",
+        "bench:commit": "tsx src/commit.bench.ts",
+        "bench:spam": "tsx src/spam.bench.ts",
+        "bench:soak": "tsx src/soak.bench.ts",
+        "bench:scaling": "tsx src/scaling.bench.ts",
+        "bench:durability": "tsx src/durability.bench.ts",
+        "bench:compaction": "tsx src/compaction.bench.ts",
+        "bench:fuzzing": "tsx src/fuzzing.bench.ts",
+        "test": "vitest",
+        "clean": "rm -rf dist bench-out"
+    },
+    "dependencies": {
+        "@vera/core": "workspace:*",
+        "@vera/dsl": "workspace:*",
+        "@vera/engine": "workspace:*",
+        "@vera/ordering": "workspace:*",
+        "@vera/store": "workspace:*",
+        "command-line-args": "^5.2.1",
+        "picocolors": "^1.0.0"
+    },
+    "devDependencies": {
+        "@types/node": "^20.0.0",
+        "@vitest/coverage-v8": "3.2.4",
+        "tsx": "^4.7.0",
+        "typescript": "^5.0.0",
+        "vitest": "^3.2.4"
+    }
+}

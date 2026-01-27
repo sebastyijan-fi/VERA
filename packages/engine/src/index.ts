@@ -37,3 +37,7 @@ export {
     type AuditEntry,
     type AuditLog,
 } from './audit.js';
+
+// Parallel Engine
+export { ParallelExecutor } from './parallel/executor.js';
+export { WorkerPool } from './parallel/pool.js';

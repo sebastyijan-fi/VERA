@@ -52,7 +52,7 @@ export class JsonStore implements Store {
         }
     }
 
-    async put(key: Key, value: Value): Promise<void> {
+    async put(key: Key, value: Value, _options?: any): Promise<void> {
         await this.memory.put(key, value);
         await this.save();
     }
@@ -89,6 +89,13 @@ export class JsonStore implements Store {
 
     iterator(options?: IteratorOptions): StoreIterator {
         return this.memory.iterator(options);
+    }
+
+    snapshot(): Store {
+        // For JsonStore, snapshot uses the memory store's snapshot but remains read-only
+        // (implied by snapshot contract) or just returns a point-in-time MemoryStore.
+        // Actually, JsonStore snapshots should probably just be MemoryStores.
+        return this.memory.snapshot();
     }
 
     async clear(): Promise<void> {

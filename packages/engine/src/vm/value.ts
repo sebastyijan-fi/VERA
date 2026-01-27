@@ -254,3 +254,21 @@ export function valueToString(value: Value): string {
             return `${value.type}{${[...value.fields].map(([k, v]) => `${k}: ${valueToString(v)}`).join(', ')}}`;
     }
 }
+
+/**
+ * Creates a deep clone of a value to ensure isolation.
+ */
+export function cloneValue(val: Value): Value {
+    switch (val.kind) {
+        case 'list':
+            return { kind: 'list', elements: val.elements.map(cloneValue) };
+        case 'map':
+            return { kind: 'map', entries: new Map([...val.entries].map(([k, v]) => [k, cloneValue(v)])) };
+        case 'struct':
+            return { kind: 'struct', type: val.type, fields: new Map([...val.fields].map(([k, v]) => [k, cloneValue(v)])) };
+        case 'bytes':
+            return { kind: 'bytes', value: new Uint8Array(val.value) };
+        default:
+            return { ...val } as Value;
+    }
+}

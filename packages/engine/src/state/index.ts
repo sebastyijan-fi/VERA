@@ -14,4 +14,5 @@ export {
     type JournalEntry,
     StateJournal,
     createStateJournal,
+    type AccessSet,
 } from './journal.js';

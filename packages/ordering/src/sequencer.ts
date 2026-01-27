@@ -32,6 +32,10 @@ export interface Sequencer {
      * Submits a transaction for sequencing
      */
     submit(tx: RawTransaction): Promise<SubmitResult>;
+    /**
+     * Submits multiple transactions for sequencing
+     */
+    submitMany(txs: RawTransaction[]): Promise<SubmitResult[]>;
 
     /**
      * Gets the next transaction to be executed

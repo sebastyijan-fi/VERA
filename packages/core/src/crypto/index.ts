@@ -30,6 +30,7 @@ export {
     signWithDomain,
     signTransaction,
     verify,
+    verifyBatch,
     verifyWithDomain,
     verifyTransactionSignature,
     verifyAllSignatures,
@@ -37,6 +38,11 @@ export {
     isValidPrivateKey,
     deriveKeyPairFromSeed,
 } from './sign.js';
+
+export {
+    SignatureWorkerPool,
+    type VerificationItem,
+} from './pool.js';
 
 // Merkle tree
 export {
@@ -52,3 +58,6 @@ export {
     verifyMerkleProof,
     computeRootWithValue,
 } from './merkle.js';
+
+// Commitment Schemes
+export * from './commitment.js';

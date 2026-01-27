@@ -142,12 +142,16 @@ export class Stack {
 export interface CallFrame {
     /** Function name */
     functionName: string;
-    /** Return address (instruction index) */
+    /** Current instruction index */
+    pc: number;
+    /** Return address (instruction index in caller) */
     returnAddress: number;
     /** Local variable base pointer */
     basePointer: number;
     /** Local variables */
     locals: Map<string, Value>;
+    /** Label map for this function */
+    labelMap: Map<string, number>;
 }
 
 /**

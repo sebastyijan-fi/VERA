@@ -188,16 +188,78 @@ export function createFixed<P extends number, S extends number>(
 }
 
 /**
- * Converts a number to Fixed (for initialization only, not in execution)
+ * Parses a string to a Fixed value.
+ * Ensures absolute precision by avoiding floating-point math.
  */
-export function toFixed<P extends number, S extends number>(
-    num: number,
+export function parseFixed<P extends number, S extends number>(
+    val: string,
     precision: P,
     scale: S
 ): Fixed<P, S> {
+    const isNegative = val.startsWith('-');
+    const absVal = isNegative ? val.slice(1) : val;
+
+    const [intPart, fracPart = ''] = absVal.split('.');
+    if (!intPart && !fracPart) throw new Error(`Invalid Fixed string: ${val}`);
+
     const multiplier = 10n ** BigInt(scale);
-    const value = BigInt(Math.round(num * Number(multiplier)));
+    let value = (intPart ? BigInt(intPart) : 0n) * multiplier;
+
+    if (fracPart.length > 0) {
+        const normalizedFrac = fracPart.slice(0, scale).padEnd(scale, '0');
+        value += BigInt(normalizedFrac);
+    }
+
+    if (isNegative) {
+        value = -value;
+    }
+
     return createFixed(value, precision, scale);
+}
+
+/**
+ * Formats a Fixed value back to a string with the correct decimal places.
+ * Ensures absolute precision by avoiding floating-point math.
+ */
+export function formatFixed<P extends number, S extends number>(
+    fixed: Fixed<P, S>
+): string {
+    const isNegative = fixed.value < 0n;
+    const absValue = isNegative ? -fixed.value : fixed.value;
+    const multiplier = 10n ** BigInt(fixed.scale);
+
+    const intPart = absValue / multiplier;
+    const fracPart = absValue % multiplier;
+
+    const fracStr = fracPart.toString().padStart(fixed.scale, '0');
+    const result = `${isNegative ? '-' : ''}${intPart}.${fracStr}`;
+
+    // Trim trailing zeros from fractional part but keep at least one digit
+    return result.replace(/0+$/, '').replace(/\.$/, '.0');
+}
+
+// ============================================================================
+// Serialization Utilities (Canonical / Deterministic)
+// ============================================================================
+
+/**
+ * Encodes a 64-bit unsigned integer to 8-byte big-endian.
+ */
+export function uint64ToBytes(val: bigint): Uint8Array {
+    const buf = new Uint8Array(8);
+    const view = new DataView(buf.buffer);
+    view.setUint32(0, Number(val >> 32n), false);
+    view.setUint32(4, Number(val & 0xFFFFFFFFn), false);
+    return buf;
+}
+
+/**
+ * Decodes 8-byte big-endian to 64-bit unsigned integer.
+ */
+export function bytesToUint64(bytes: Uint8Array): bigint {
+    if (bytes.length !== 8) throw new Error('Expected 8 bytes for uint64');
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    return (BigInt(view.getUint32(0, false)) << 32n) | BigInt(view.getUint32(4, false));
 }
 
 /**

@@ -33,7 +33,7 @@
             "path": "./packages/ordering"
         },
         {
-            "path": "./packages/cli"
+            "path": "./packages/node"
         }
     ]
 }
