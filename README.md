@@ -20,32 +20,42 @@ VERA is built as a modular monorepo:
 
 ## Quick Start
 
-### Installation
+### 1. Setup
 
 ```bash
 pnpm install
 pnpm build
 ```
 
-### Running the CLI
+### 2. Run Local Devnet (3 Nodes)
 
-The `@vera/node` package provides the unified `vera` command-line tool:
+The devnet script launches a 3-node cluster with BFT consensus and generates validator keys.
 
 ```bash
-# General help
-pnpm --filter @vera/node vera --help
+# Compile the example contract
+pnpm --filter @vera/node vera compile examples/hello-world/contract.vera
 
-# DSL Compiler
-pnpm --filter @vera/node vera compile program.vera
+# Start the devnet with the contract loaded
+npx tsx scripts/devnet.ts --nodes 3 --clean --contract examples/hello-world/dist/contract.vir.json
+```
 
-# Interactive REPL
-pnpm --filter @vera/node vera repl
+### 3. Interact via CLI
 
-# Verify a proof
-pnpm --filter @vera/node vera verify proof.json
+Open a new terminal to send transactions. You will need a validator private key from `.devnet/keys.json`.
 
-# Run a full node
-pnpm --filter @vera/node vera run --port 5001 --data ./data
+```bash
+# Get a validator key
+cat .devnet/keys.json
+
+# Send a transaction to call SetGreeting
+node packages/node/dist/cli.js tx send \
+  --rpc http://localhost:8545 \
+  --to 0x00 \
+  --function SetGreeting \
+  --args '["Hello VERA 0.1"]' \
+  --key <YOUR_VALIDATOR_KEY>
+
+# Check the logs of the running devnet to see the execution confirmation!
 ```
 
 ### Docker
@@ -79,8 +89,9 @@ See [vera.config.example.toml](./vera.config.example.toml) for details.
 - ✅ Parallel transaction execution
 - ✅ P2P sync and binary protocol
 - ✅ Crash-safe storage with WAL
-- 🚧 CLI tooling
-- 🚧 npm package publishing
+- ✅ BFT Consensus (HotStuff)
+- ✅ JSON-RPC API
+- ✅ CLI tooling
 
 ## Licensing
 

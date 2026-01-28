@@ -1,0 +1,9 @@
+module HelloWorld
+
+public entity Greeting[String] {
+    text: String,
+}
+
+public transaction SetGreeting(msg: String) {
+    let x = msg;
+}

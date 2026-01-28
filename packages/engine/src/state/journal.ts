@@ -4,9 +4,12 @@
  * Write-ahead log for atomic state updates with commit/rollback.
  */
 
+import type { AsyncStateStore, StateKey } from '@vera/core';
+import { deriveStateId } from '@vera/core';
 import type { Value } from '../vm/value.js';
 import { valueToString } from '../vm/value.js';
 import type { StateAccessor } from './context.js';
+import { restoreFromDecoding } from '../vm/codec.js';
 
 // ============================================================================
 // Journal Entry
@@ -36,9 +39,14 @@ export class StateJournal implements StateAccessor {
     private readonly underlying: Map<string, Map<string, Value>>;
     private readonly journal: JournalEntry[] = [];
     private readonly readSet: Set<string> = new Set();
+    private readonly fallbackStore: AsyncStateStore | undefined;
 
-    constructor(initialState: Map<string, Map<string, Value>> = new Map()) {
+    constructor(
+        initialState: Map<string, Map<string, Value>> = new Map(),
+        fallbackStore?: AsyncStateStore
+    ) {
         this.underlying = initialState;
+        this.fallbackStore = fallbackStore;
     }
 
     /**
@@ -61,8 +69,62 @@ export class StateJournal implements StateAccessor {
                 }
             }
         }
-        // Fallback to underlying
-        return this.underlying.get(entityType)?.get(keyStr);
+
+        // Check underlying Map (Cache/Staging)
+        const cached = this.underlying.get(entityType)?.get(keyStr);
+        if (cached !== undefined) return cached;
+
+        // Fallback to persistent store
+        if (this.fallbackStore) {
+            // Convert string key back to ID?
+            // KeyStr from VM is NOT the raw key bytes, it's string repr.
+            // We need to know the raw key bytes to derive ID.
+            // But `key` argument IS the Value object.
+            // If key is int/string/bytes, deriveStateId can handle it (if encoded properly).
+            // Wait, `deriveStateId` takes `string` in current codebase? Or `StateKey`?
+            // Let's assume we can derive ID from the key value.
+            // We need to construct `StateKey`.
+
+            // Issue: keyStr is "i:123". StateKey uses encoded form.
+            // We need to encode the key value to bytes, then derive ID (sha256).
+            // But we don't have `encodeStateKey` imported from core directly that takes Value?
+            // Core has `encodeStateKey(StateKey)`.
+            // StateKey is { namespace, id }.
+            // We need `id`.
+            // `deriveStateId` typically takes the key string/bytes?
+
+            // If we look at processor.ts:
+            // const id = deriveStateId(entry.key); // entry.key is keyStr
+            // But entry.key is constructed from `valueToString(key)`.
+            // Is `deriveStateId` compatible with `valueToString` output?
+            // Likely yes if developed consistently.
+
+            const id = deriveStateId(keyStr);
+
+            const stateKey: StateKey = {
+                namespace: entityType,
+                id: id as any // Cast to Bytes32
+            };
+
+            const coreValue = await this.fallbackStore.get(stateKey);
+            if (coreValue) {
+                // Convert Core StateValue (binary) to VM Value
+                // CoreStateValue has `.data` (Uint8Array).
+                const vmValue = restoreFromDecoding(coreValue.data); // Expects CBOR bytes?
+
+                // Cache in underlying map for future hits in this transaction
+                let entityMap = this.underlying.get(entityType);
+                if (!entityMap) {
+                    entityMap = new Map();
+                    this.underlying.set(entityType, entityMap);
+                }
+                entityMap.set(keyStr, vmValue);
+
+                return vmValue;
+            }
+        }
+
+        return undefined;
     }
 
     /**

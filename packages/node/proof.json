@@ -1,0 +1,9 @@
+{
+  "version": "1.0.0",
+  "filename": "test_doc.txt",
+  "timestamp": "2026-01-27T21:27:51.614Z",
+  "fileHash": "3d8ae953748f4b598926c0f6fbad4bc44ab637c7ef4050d3d2917acddc048317",
+  "signature": "9bc7080d7ca1bc2cfafcf55b413468e4cd9d9cca9dbd5b128d960067bcee7c8f970de71b8ae9bda644b3b33cce1ca9ef00d28140c97ada4e71ab421045abd407",
+  "publicKey": "ba59baff98117ef5c8c516fc854a67c4aa6aa48e49fce45d60bf885f6169174a",
+  "algo": "Ed25519(SHA256(File))"
+}

@@ -1,5 +1,14 @@
 import { type NetworkNode } from '../node.js';
-import { MessageType, type GetBlocksMessage, type BlocksMessage, type Message } from '../protocol/message.js';
+import {
+    MessageType,
+    type GetBlocksMessage,
+    type BlocksMessage,
+    type Message,
+    type GetHeadersMessage,
+    type HeadersMessage,
+    type BlockHeader,
+    type Block
+} from '../protocol/message.js';
 import { type Peer } from '../transport/peer.js';
 
 export interface BlockProvider {
@@ -30,20 +39,12 @@ export class SyncManager {
         });
     }
 
-    private handlePeerConnect(peer: Peer) {
+    private async handlePeerConnect(peer: Peer) {
         if (this.isSyncing) return;
 
-        // Check if peer has a higher height
-        // For now, we assume we can access local height from node options or similar
-        // Let's assume node has a getCurrentHeight() method or we access options
-        // But node options might be static.
-        // We'll trust the plan: "Triggers sync on connection (if remote height > local height)"
-        // We need to know local height.
-
-        // Let's assume for now we look at node.options (which we can't easily access if private)
-        // We should add getHeight() to NetworkNode.
-
-        // Placeholder check:
+        // Check remote height
+        // In real Node, we should have a `peer.remoteInfo` populated from Handshake.
+        // Assuming it is populated.
         const remoteHeight = peer.remoteInfo?.height || 0n;
         const localHeight = this.node.getHeight();
 
@@ -55,20 +56,26 @@ export class SyncManager {
 
     private startSync(peer: Peer, fromHeight: bigint) {
         this.isSyncing = true;
-
-        const payload: GetBlocksMessage = {
+        // Step 1: Request Headers first
+        const payload: GetHeadersMessage = {
             fromHeight,
-            limit: 50
+            limit: 100 // Fetch headers in bulk
         };
 
         peer.send({
-            type: MessageType.GET_BLOCKS,
+            type: MessageType.GET_HEADERS,
             payload
         });
     }
 
     private handleMessage(msg: Message, peer: Peer) {
         switch (msg.type) {
+            case MessageType.GET_HEADERS:
+                this.handleGetHeaders(msg.payload, peer);
+                break;
+            case MessageType.HEADERS:
+                this.handleHeaders(msg.payload, peer);
+                break;
             case MessageType.GET_BLOCKS:
                 this.handleGetBlocks(msg.payload, peer);
                 break;
@@ -78,67 +85,96 @@ export class SyncManager {
         }
     }
 
-    private async handleGetBlocks(payload: GetBlocksMessage, peer: Peer) {
-        let blocks: any[] = [];
+    private async handleGetHeaders(payload: GetHeadersMessage, peer: Peer) {
+        let headers: BlockHeader[] = [];
 
         if (this.blockProvider) {
-            try {
-                // Fetch from provider (Store/FullNode)
-                blocks = await this.blockProvider.getBlocks(payload.fromHeight, payload.limit);
-            } catch (e) {
-                console.error('Error fetching blocks from provider:', e);
-            }
-        } else {
-            // Fallback mock response
-            for (let i = 0; i < payload.limit; i++) {
-                blocks.push({
-                    height: payload.fromHeight + BigInt(i),
-                    hash: `hash-${payload.fromHeight + BigInt(i)}`
-                });
-            }
+            // Fetch blocks from provider to extract headers
+            // In a real optimized node, we'd have a separate getHeaders method.
+            const blocks = await this.blockProvider.getBlocks(payload.fromHeight, payload.limit);
+            // Blocks are [Header, Tx[]] tuples
+            headers = blocks.map((b: any) => b[0]);
         }
 
-        const response: BlocksMessage = {
-            blocks
+        peer.send({
+            type: MessageType.HEADERS,
+            payload: { headers }
+        });
+    }
+
+    private handleHeaders(payload: HeadersMessage, peer: Peer) {
+        if (!this.isSyncing) return;
+        const headers = payload.headers;
+        if (headers.length === 0) {
+            this.isSyncing = false;
+            console.log('Sync finished (no headers).');
+            return;
+        }
+
+        console.log(`Received ${headers.length} headers. Validating...`);
+        // Validate headers (check chain linkage, PoW/PoS, etc)
+        // Mock: Accept all.
+
+        // Download Bodies for these headers
+        // We can request strictly the blocks we have headers for.
+        // Or request in batches.
+        const firstHeader = headers[0]!;
+        // const lastHeader = headers[headers.length - 1];
+
+        // Request bodies
+        const getBlocks: GetBlocksMessage = {
+            fromHeight: firstHeader[1], // Index 1 is height
+            limit: headers.length
         };
 
         peer.send({
+            type: MessageType.GET_BLOCKS,
+            payload: getBlocks
+        });
+    }
+
+    private async handleGetBlocks(payload: GetBlocksMessage, peer: Peer) {
+        let blocks: Block[] = [];
+
+        if (this.blockProvider) {
+            blocks = await this.blockProvider.getBlocks(payload.fromHeight, payload.limit);
+        }
+
+        peer.send({
             type: MessageType.BLOCKS,
-            payload: response
+            payload: { blocks }
         });
     }
 
     private handleBlocks(payload: BlocksMessage, peer: Peer) {
         if (!this.isSyncing) return;
+        const blocks = payload.blocks;
 
-        console.log(`Received ${payload.blocks.length} blocks from ${peer.id}`);
+        console.log(`Received ${blocks.length} blocks. Applying...`);
 
-        if (payload.blocks.length === 0) {
+        if (blocks.length === 0) {
             this.isSyncing = false;
-            console.log('Sync finished (no more blocks).');
             return;
         }
 
-        // Process blocks (mock)
-        // In real system: validate and commit
+        // Checked length > 0 above
+        const lastBlock = blocks[blocks.length - 1]!;
+        // Block is [Header, Tx[]]. Header is index 0. Height is Header[1].
+        const lastHeight = lastBlock[0][1];
 
-        const lastBlock = payload.blocks[payload.blocks.length - 1];
-        const lastHeight = lastBlock.height;
+        // Update local state (mock)
+        // this.node.setHeight(lastHeight);
 
-        // Update local height (mock)
-        // this.node.updateHeight(lastHeight);
+        // Emit events
+        this.node.emit('sync:blocks', blocks);
 
-        // Check if we need more
-        // In this simple version, we stop or ask for more
-        // If we received Limit, ask for more?
-
-        if (payload.blocks.length === 50) {
+        // Continue sync?
+        // simple logic: if we got full batch, ask for more headers starting next
+        if (blocks.length >= 50) { // Limit was 100 headers, maybe we got 100 blocks
             this.startSync(peer, lastHeight + 1n);
         } else {
             this.isSyncing = false;
             console.log('Sync finished.');
         }
-
-        this.node.emit('sync:blocks', payload.blocks);
     }
 }

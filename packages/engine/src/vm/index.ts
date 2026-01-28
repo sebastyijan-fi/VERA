@@ -42,3 +42,12 @@ export {
     EnsureError,
     type VMResult,
 } from './vm.js';
+
+export {
+    PRECOMPILES,
+    isPrecompile,
+    executePrecompile,
+    precompileOutputToValue,
+    type PrecompileResult,
+    type PrecompileFunction,
+} from './precompiles.js';

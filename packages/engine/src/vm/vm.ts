@@ -23,6 +23,7 @@ import { Stack, CallStack, type CallFrame } from './stack.js';
 import { GasMeter, OutOfGasError } from '../gas/gas.js';
 import type { ExecutionContext } from '../state/context.js';
 import { sha256 } from '@vera/core';
+import { isPrecompile, executePrecompile, precompileOutputToValue } from './precompiles.js';
 
 // ============================================================================
 // VM Error
@@ -126,7 +127,7 @@ export class VirtualMachine {
                 gas.consumeOpcode(inst.opcode);
 
                 // Execute
-                await this.executeInstruction(inst, frame, context);
+                await this.executeInstruction(inst, frame, context, gas);
 
                 // Increment PC (if not jumped/halted)
                 if (!this.halted && this.callStack.current() === frame) {
@@ -193,7 +194,8 @@ export class VirtualMachine {
     private async executeInstruction(
         instruction: IRInstruction,
         frame: CallFrame,
-        context: ExecutionContext
+        context: ExecutionContext,
+        gas: GasMeter
     ): Promise<void> {
         const { opcode, operand } = instruction;
 
@@ -380,6 +382,29 @@ export class VirtualMachine {
 
             case IROpcode.CALL: {
                 const funcName = operand as string;
+
+                // Check for precompiled contract
+                if (isPrecompile(funcName)) {
+                    const input = this.stack.pop();
+                    if (input.kind !== 'bytes') {
+                        throw new VMError(`Precompile ${funcName} requires bytes input`, frame.pc, 'CALL');
+                    }
+
+                    const result = executePrecompile(funcName, input.value, gas.remaining);
+                    if (!result) {
+                        throw new VMError(`Precompile ${funcName} not found`, frame.pc, 'CALL');
+                    }
+
+                    gas.consume(result.gasUsed);
+
+                    if (!result.success) {
+                        throw new VMError(result.error || `Precompile ${funcName} failed`, frame.pc, 'CALL');
+                    }
+
+                    this.stack.push(precompileOutputToValue(result.output));
+                    break;
+                }
+
                 const targetFunc = this.program.functions.find(f => f.name === funcName);
                 if (!targetFunc) {
                     throw new VMError(`Function not found: ${funcName}`, frame.pc, 'CALL');
@@ -680,6 +705,8 @@ export class VirtualMachine {
                 return addressValue(irValue.value);
             case 'null':
                 return nullValue();
+            default:
+                throw new Error(`Unknown IR value kind: ${(irValue as any).kind}`);
         }
     }
 

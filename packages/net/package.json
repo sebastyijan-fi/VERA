@@ -30,6 +30,7 @@
         "directory": "packages/net"
     },
     "dependencies": {
+        "@subspace/reed-solomon-erasure.wasm": "^0.2.5",
         "@vera/core": "workspace:*",
         "cbor-x": "^1.6.0",
         "eventemitter3": "^5.0.0"

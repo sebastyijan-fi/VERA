@@ -1,58 +1,80 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { NetworkNode, type NetworkOptions } from '../src/node.js';
 
-const GENESIS = '0x0000000000000000000000000000000000000000000000000000000000000000';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { SyncManager } from '../src/sync/manager.js';
+import { NetworkNode } from '../src/node.js';
+import { Peer } from '../src/transport/peer.js';
+import { MessageType, type BlockHeader, type Block } from '../src/protocol/message.js';
+import { EventEmitter } from 'eventemitter3';
 
-const OPTIONS_A: NetworkOptions = {
-    networkId: 'testnet',
-    version: '1.0.0',
-    genesisHash: GENESIS,
-    headHash: GENESIS,
-    height: 0n
-};
+// Mock Node and Peer
+class MockNode extends EventEmitter {
+    getHeight = vi.fn().mockReturnValue(0n);
+    setHeight = vi.fn();
+}
 
-const OPTIONS_B: NetworkOptions = {
-    networkId: 'testnet',
-    version: '1.0.0',
-    genesisHash: GENESIS,
-    headHash: '0x123', // Some head hash
-    height: 10n        // Higher height
-};
+class MockPeer extends EventEmitter {
+    id = 'peer-1';
+    remoteInfo = { height: 100n };
+    send = vi.fn();
+}
 
-describe('Chain Synchronization', () => {
-    let nodeA: NetworkNode;
-    let nodeB: NetworkNode;
+describe('SyncManager (Binary Protocol)', () => {
+    let node: any;
+    let syncManager: SyncManager;
+    let peer: any;
 
-    afterEach(async () => {
-        await nodeA?.stop();
-        await nodeB?.stop();
+    beforeEach(() => {
+        node = new MockNode();
+        syncManager = new SyncManager(node as unknown as NetworkNode);
+        peer = new MockPeer();
     });
 
-    it('should trigger sync when connecting to a node with higher height', async () => {
-        nodeA = new NetworkNode(OPTIONS_A);
-        nodeB = new NetworkNode(OPTIONS_B);
+    it('should start sync with GET_HEADERS when peer height is higher', () => {
+        // Trigger connect
+        node.emit('peer:connect', peer);
 
-        await nodeA.start(4001);
-        await nodeB.start(4002);
+        expect(peer.send).toHaveBeenCalledWith(expect.objectContaining({
+            type: MessageType.GET_HEADERS,
+            payload: { fromHeight: 1n, limit: 100 }
+        }));
+    });
 
-        // Expect Node A to emit sync:blocks
-        // Node A has height 0, Node B has height 10.
-        // Node A should request from height 1. 
-        // SyncManager asks limit 50.
-        // Node B should respond with blocks.
+    it('should request blocks after receiving valid headers', () => {
+        // Assume sync started
+        syncManager['isSyncing'] = true;
 
-        const syncPromise = new Promise<any[]>((resolve) => {
-            nodeA.on('sync:blocks', (blocks) => {
-                resolve(blocks);
-            });
-        });
+        // Simulate incoming HEADERS
+        const headers: BlockHeader[] = [];
+        for (let i = 1; i <= 10; i++) {
+            headers.push([1, BigInt(i), 'prev', 'root', 12345, 0n]);
+        }
 
-        await nodeA.connect('127.0.0.1', 4002);
+        syncManager['handleHeaders']({ headers }, peer);
 
-        const blocks = await syncPromise;
+        expect(peer.send).toHaveBeenCalledWith(expect.objectContaining({
+            type: MessageType.GET_BLOCKS,
+            payload: { fromHeight: 1n, limit: 10 }
+        }));
+    });
 
-        expect(blocks.length).toBeGreaterThan(0);
-        expect(blocks[0].height).toBe(1n);
-        expect(Number(blocks[blocks.length - 1].height)).toBeGreaterThan(0);
+    it('should process received binary blocks', () => {
+        syncManager['isSyncing'] = true;
+        const spy = vi.spyOn(node, 'emit');
+
+        // Simulate incoming BLOCKS (binary format)
+        const blocks: Block[] = [];
+        for (let i = 1; i <= 10; i++) {
+            const h: BlockHeader = [1, BigInt(i), 'prev', 'root', 12345, 0n];
+            blocks.push([h, []]); // Empty txs
+        }
+
+        syncManager['handleBlocks']({ blocks }, peer);
+
+        expect(spy).toHaveBeenCalledWith('sync:blocks', blocks);
+        // Expect continuation (since length < 50, it stops)
+        // But logic says if < 50, stops.
+        expect(peer.send).not.toHaveBeenCalledWith(expect.objectContaining({
+            type: MessageType.GET_HEADERS
+        }));
     });
 });

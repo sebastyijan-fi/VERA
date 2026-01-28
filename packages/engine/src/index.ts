@@ -40,4 +40,5 @@ export {
 
 // Parallel Engine
 export { ParallelExecutor } from './parallel/executor.js';
+export { AsyncOptimisticExecutor, type AsyncExecutionStats } from './parallel/async_executor.js';
 export { WorkerPool } from './parallel/pool.js';

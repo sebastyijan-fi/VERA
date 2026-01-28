@@ -1,0 +1,7 @@
+# VERA Configuration Example
+
+port = 5001
+dataDir = "./data"
+
+# Initial peers to connect to
+# peers = ["localhost:5002"]

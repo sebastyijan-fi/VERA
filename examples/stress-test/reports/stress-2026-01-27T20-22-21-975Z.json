@@ -1,0 +1,74 @@
+{
+  "duration": 27.324,
+  "totalTx": 2926,
+  "avgThroughput": 107.08534621578099,
+  "peakThroughput": 205,
+  "p99Latency": 1170,
+  "attacks": {
+    "byzantine_flood": {
+      "total": 0,
+      "rejected": 0,
+      "failed": 0
+    },
+    "signature_forgery": {
+      "total": 0,
+      "rejected": 0,
+      "failed": 0
+    },
+    "replay_attack": {
+      "total": 0,
+      "rejected": 0,
+      "failed": 0
+    },
+    "state_tampering": {
+      "total": 0,
+      "rejected": 0,
+      "failed": 0
+    },
+    "nonce_manipulation": {
+      "total": 0,
+      "rejected": 0,
+      "failed": 0
+    },
+    "double_spend": {
+      "total": 0,
+      "rejected": 0,
+      "failed": 0
+    },
+    "malformed_payload": {
+      "total": 0,
+      "rejected": 0,
+      "failed": 0
+    }
+  },
+  "issues": [],
+  "nodes": [
+    {
+      "id": "Node-A",
+      "status": "ok",
+      "blockHeight": 14,
+      "stateRoot": "---",
+      "memoryRss": 354299904,
+      "latencyP99": 0
+    },
+    {
+      "id": "Node-B",
+      "status": "ok",
+      "blockHeight": 14,
+      "stateRoot": "---",
+      "memoryRss": 354299904,
+      "latencyP99": 0
+    },
+    {
+      "id": "Node-C",
+      "status": "ok",
+      "blockHeight": 14,
+      "stateRoot": "---",
+      "memoryRss": 354299904,
+      "latencyP99": 0
+    }
+  ],
+  "executedTx": 2800,
+  "executedThroughput": 102.47401551749377,
+  "verdict": "PARTIAL"
+}

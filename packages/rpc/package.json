@@ -1,0 +1,37 @@
+{
+    "name": "@vera/rpc",
+    "version": "1.0.0",
+    "type": "module",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js"
+        }
+    },
+    "files": [
+        "dist",
+        "src"
+    ],
+    "scripts": {
+        "build": "tsup src/index.ts --tsconfig tsconfig.build.json --dts --format esm",
+        "dev": "tsup src/index.ts --watch --dts --format esm",
+        "test": "vitest run",
+        "test:watch": "vitest"
+    },
+    "dependencies": {
+        "@vera/core": "workspace:*",
+        "cbor-x": "^1.6.0",
+        "consola": "^3.2.0",
+        "ws": "^8.18.0"
+    },
+    "devDependencies": {
+        "@types/node": "^22.0.0",
+        "@types/ws": "^8.5.0",
+        "tsup": "^8.0.0",
+        "typescript": "^5.0.0",
+        "vitest": "^3.0.0"
+    },
+    "license": "AGPL-3.0-only"
+}

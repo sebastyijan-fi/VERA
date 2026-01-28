@@ -125,12 +125,14 @@ export class ParallelExecutor {
         if (firstConflict < txs.length) {
             stats.rounds++;
             for (let i = firstConflict; i < txs.length; i++) {
+                const currentTx = txs[i];
+                if (!currentTx) continue;
                 // Execute serially with COMMIT=TRUE (standard execution)
                 // This runs against the updated state.
                 finalResults[i] = await this.processor.execute(
-                    txs[i]!.functionName,
-                    txs[i]!.args,
-                    txs[i]!.caller,
+                    currentTx.functionName,
+                    currentTx.args,
+                    currentTx.caller,
                     block,
                     { commit: true }
                 );

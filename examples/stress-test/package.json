@@ -1,0 +1,28 @@
+{
+    "name": "@vera/stress-test",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "start": "tsx src/index.ts",
+        "test": "vitest run",
+        "build": "tsup src/index.ts --format esm --clean"
+    },
+    "dependencies": {
+        "@vera/core": "workspace:*",
+        "@vera/dsl": "workspace:*",
+        "@vera/engine": "workspace:*",
+        "@vera/store": "workspace:*",
+        "@vera/node": "workspace:*",
+        "@vera/ordering": "workspace:*",
+        "commander": "^12.0.0",
+        "consola": "^3.2.3",
+        "picocolors": "^1.0.0",
+        "tsx": "^4.7.1"
+    },
+    "devDependencies": {
+        "tsup": "^8.0.2",
+        "typescript": "^5.3.3",
+        "vitest": "^3.2.4"
+    }
+}

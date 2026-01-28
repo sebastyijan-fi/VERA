@@ -21,6 +21,17 @@ export type SequenceNumber = bigint;
 export type FinalityState = 'pending' | 'sequenced' | 'finalized';
 
 // ============================================================================
+// Access List Types (C.1)
+// ============================================================================
+
+export interface AccessListEntry {
+    entityType: string;
+    keys: string[];
+}
+
+export type AccessList = AccessListEntry[];
+
+// ============================================================================
 // Transaction Types
 // ============================================================================
 
@@ -46,6 +57,43 @@ export interface RawTransaction {
     canonicalTxBytes: Uint8Array;
     /** Timestamp when submitted */
     submittedAt: bigint;
+    /** Optional Access List for state pre-warming/conflict detection */
+    accessList?: AccessList | undefined;
+}
+
+// ... unchanged types ...
+
+// ============================================================================
+// Factory Functions
+// ============================================================================
+
+/**
+ * Creates a raw transaction
+ */
+export function createRawTransaction(
+    hash: Bytes32,
+    chainId: Bytes32,
+    sender: Address,
+    func: string,
+    args: Uint8Array,
+    nonce: bigint,
+    signature: Uint8Array,
+    canonicalTxBytes: Uint8Array,
+    submittedAt: bigint = BigInt(Date.now()),
+    accessList?: AccessList
+): RawTransaction {
+    return {
+        hash,
+        chainId,
+        sender,
+        function: func,
+        args,
+        nonce,
+        signature,
+        canonicalTxBytes,
+        submittedAt,
+        accessList,
+    };
 }
 
 /**
@@ -132,33 +180,4 @@ export interface Subscription {
     unsubscribe(): void;
 }
 
-// ============================================================================
-// Factory Functions
-// ============================================================================
 
-/**
- * Creates a raw transaction
- */
-export function createRawTransaction(
-    hash: Bytes32,
-    chainId: Bytes32,
-    sender: Address,
-    func: string,
-    args: Uint8Array,
-    nonce: bigint,
-    signature: Uint8Array,
-    canonicalTxBytes: Uint8Array,
-    submittedAt: bigint = BigInt(Date.now())
-): RawTransaction {
-    return {
-        hash,
-        chainId,
-        sender,
-        function: func,
-        args,
-        nonce,
-        signature,
-        canonicalTxBytes,
-        submittedAt,
-    };
-}

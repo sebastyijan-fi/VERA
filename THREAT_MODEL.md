@@ -15,7 +15,7 @@ This threat model covers the **Execution** and **Ordering** layers of the VERA r
 **Explicit Non-Goals:**
 
 * **On-chain Privacy**: Transaction data is assumed to be visible to all node operators (unless separate encryption is applied).
-* **Censorship Resistance (Single Sequencer)**: In the default `SingleSequencer` mode, the operator can censor transactions. Use decentralized sequencing (Future Work) for resistance.
+* **Censorship Resistance**: In BFT mode, a transaction is censored only if >1/3 of validators collude to ignore it. In single-node mode, the operator has full censorship power.
 * **Quantum Resistance**: Current cryptographic primitives (Ed25519, SHA-256) are standard but not post-quantum secure.
 
 ## References
@@ -63,21 +63,28 @@ This model aligns with concepts from:
   * **Lockfiles**: `pnpm-lock.yaml` ensures deterministic dependency versions.
   * **Build Verification**: CI pipelines verify build reproducibility (planned).
 
-### 3. Operator Attacks (Single Sequencer)
+### 3. Consensus Attacks (BFT)
 
-#### 3.1 Malicious State Root Publishing
+#### 3.1 Safety Violation (Conflicting Blocks)
 
-* **Threat**: The sequencer publishes a State Root that does not match the result of the transactions.
+* **Threat**: Malicious validators (>1/3) attempt to finalize two different blocks at the same height (Fork).
 * **Mitigation**:
-  * **Verifiability**: Any observer can sync the transaction log and re-execute the TSP engine. If they compute a different root, the sequencer is proven malicious (Fraud Proof).
-  * **Cryptographic Binding**: The root is the Merkle digest of the entire state; it cannot be forged without breaking SHA-256 Preimage resistance.
+  * **Quorum Certificates (QC)**: A block is only finalized if 2f+1 validators sign it. Conflicting QCs imply >1/3 malicious voting power (Slashing Condition).
+  * **HotStuff Rules**: Validators verify `SafeNode` predicates (commit rule) before voting.
 
-#### 3.2 Key Compromise
+#### 3.2 Liveness Attack (Stalling)
 
-* **Threat**: The Sequencer's signing key is stolen.
+* **Threat**: Malicious leader or network partition prevents block progress (DoS).
 * **Mitigation**:
-  * Key Rotation capability (via Governance transaction).
-  * Hardware Security Module (HSM) support (Operationally planned).
+  * **Pacemaker**: If a round times out without a QC, validators move to the next round.
+  * **Leader Rotation**: Deterministic Round-Robin ensures a malicious leader is skipped in the next view.
+
+#### 3.3 Key Compromise
+
+* **Threat**: Validator signing keys are stolen.
+* **Mitigation**:
+  * **Domain Separation**: Usage of 'domain-separated' signing contexts prevents replay across different message types.
+  * **Key Rotation**: Governance capability (Future Work).
 
 ## Risk Assessment
 

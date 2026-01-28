@@ -36,18 +36,32 @@ export class WorkerPool {
     }
 
     private addWorker(id: number) {
-        // Resolve path relative to source or compiled output
-        // If running in TS (tsx/ts-node), target .ts. If compiled, target .js
-        const tsPath = join(__dirname, 'worker.ts');
-        const jsPath = join(__dirname, 'worker.js');
-        const distPath = join(__dirname, '../../dist/parallel/worker.js');
+        // Resolve worker path robustly for both TS(src) and JS(dist) environments
+        const currentDir = __dirname;
 
-        let workerScript = existsSync(tsPath) ? tsPath : jsPath;
+        let workerScript: string;
 
-        // Prefer built worker if available to avoid loader issues
-        if (existsSync(distPath)) {
-            workerScript = distPath;
+        // Check if we are in 'dist' (production/build)
+        // dist/parallel/pool.js -> dist/parallel/worker.js
+        if (existsSync(join(currentDir, 'worker.js'))) {
+            workerScript = join(currentDir, 'worker.js');
         }
+        // dist/index.js -> dist/parallel/worker.js (if bundled differently)
+        else if (existsSync(join(currentDir, 'parallel', 'worker.js'))) {
+            workerScript = join(currentDir, 'parallel', 'worker.js');
+        }
+        // Check relative to project root for dist (dev/test environment fallback)
+        // src/parallel/pool.ts -> ../../dist/parallel/worker.js
+        else if (existsSync(join(currentDir, '../../dist/parallel/worker.js'))) {
+            workerScript = join(currentDir, '../../dist/parallel/worker.js');
+        }
+        // Fallback to TS source (requires loader in execArgv)
+        else {
+            workerScript = join(currentDir, 'worker.ts');
+        }
+
+        // console.log(`Worker ${id} script: ${workerScript}`); // Debug
+
 
         const worker = new Worker(workerScript, {
             execArgv: process.execArgv

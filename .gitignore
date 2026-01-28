@@ -33,8 +33,13 @@ __snapshots__
 
 # VERA Specific
 .vera/
+.devnet/
+stress-data/
 *.db/
 data/
+*.wal
+commitlog
+state/
 bench-out/
 benchmarks/
 tests-out/

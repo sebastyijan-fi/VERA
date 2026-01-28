@@ -20,6 +20,7 @@
     "scripts": {
         "build": "tsup src/index.ts src/cli.ts --tsconfig tsconfig.build.json --dts --format esm",
         "dev": "tsup src/index.ts src/cli.ts --watch --dts --format esm",
+        "start": "node dist/cli.js run",
         "test": "vitest run",
         "test:coverage": "vitest run --coverage"
     },
@@ -33,18 +34,25 @@
     },
     "dependencies": {
         "@iarna/toml": "^2.2.5",
+        "@noble/hashes": "^1.8.0",
+        "@vera/consensus": "workspace:*",
         "@vera/core": "workspace:*",
         "@vera/dsl": "workspace:*",
         "@vera/engine": "workspace:*",
         "@vera/net": "workspace:*",
+        "@vera/ordering": "workspace:*",
+        "@vera/rpc": "workspace:*",
         "@vera/store": "workspace:*",
+        "cbor-x": "^1.6.0",
         "commander": "^11.0.0",
         "consola": "^3.2.0",
+        "eventemitter3": "^5.0.4",
         "picocolors": "^1.1.1"
     },
     "devDependencies": {
         "@types/node": "^22.0.0",
         "@vitest/coverage-v8": "3.2.4",
+        "execa": "^9.6.1",
         "tsup": "^8.0.0",
         "typescript": "^5.0.0",
         "vitest": "^3.0.0"

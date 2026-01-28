@@ -33,14 +33,23 @@ export class PersistentStateStore implements AsyncStateStore {
     private readonly trie: DiskMerkleTrie;
     private readonly clock: Clock;
     private readonly trieCache: LRUCache<string, TrieNode>;
+    private readonly valueCache: LRUCache<string, StateValue>;
     private _root: Bytes32;
     private _version: bigint;
 
-    constructor(store: Store, clock: Clock, root: Bytes32 = EMPTY_TREE_ROOT, version: bigint = 0n, trieCache?: LRUCache<string, TrieNode>) {
+    constructor(
+        store: Store,
+        clock: Clock,
+        root: Bytes32 = EMPTY_TREE_ROOT,
+        version: bigint = 0n,
+        trieCache?: LRUCache<string, TrieNode>,
+        valueCache?: LRUCache<string, StateValue>
+    ) {
         this.store = store;
         this.clock = clock;
         this.trieCache = trieCache ?? new LRUCache(10000);
-        this.trie = new DiskMerkleTrie(store, new MerkleCommitmentScheme()); // Note: commitment should be configurable ideally
+        this.valueCache = valueCache ?? new LRUCache(50000); // Cache 50k hot state items
+        this.trie = new DiskMerkleTrie(store, new MerkleCommitmentScheme());
         this._root = root;
         this._version = version;
     }
@@ -48,7 +57,12 @@ export class PersistentStateStore implements AsyncStateStore {
     /**
      * Loads the store from persistence or initializes a new one.
      */
-    static async load(store: Store, clock?: Clock, trieCache?: LRUCache<string, TrieNode>): Promise<PersistentStateStore> {
+    static async load(
+        store: Store,
+        clock?: Clock,
+        trieCache?: LRUCache<string, TrieNode>,
+        valueCache?: LRUCache<string, StateValue>
+    ): Promise<PersistentStateStore> {
         const metaBytes = await store.get(METADATA_KEY);
         let root = EMPTY_TREE_ROOT;
         let version = 0n;
@@ -62,7 +76,7 @@ export class PersistentStateStore implements AsyncStateStore {
             version = BigInt(meta.version);
         }
 
-        return new PersistentStateStore(store, sysClock, root, version, trieCache);
+        return new PersistentStateStore(store, sysClock, root, version, trieCache, valueCache);
     }
 
     get root(): Bytes32 {
@@ -74,11 +88,23 @@ export class PersistentStateStore implements AsyncStateStore {
     }
 
     async get(key: StateKey): Promise<StateValue | null> {
-        // Fast path: direct DB lookup
+        // 1. Check Hot Cache
         const dbKey = this.toDbKey(key);
+        // Use dbKey string as cache key (Uint8Array needs stringification for Map key)
+        const cacheKey = Buffer.from(dbKey).toString('hex');
+
+        const cached = this.valueCache.get(cacheKey);
+        if (cached !== undefined) {
+            return cached;
+        }
+
+        // 2. Slow path: LevelDB lookup
         const data = await this.store.get(dbKey);
         if (!data) return null;
-        return deserializeStateValue(data);
+
+        const value = deserializeStateValue(data);
+        this.valueCache.set(cacheKey, value);
+        return value;
     }
 
     async getWithProof(key: StateKey): Promise<StateQueryResult> {
@@ -172,12 +198,20 @@ export class PersistentStateStore implements AsyncStateStore {
 
                 batch.put(dbKey, valueBytes);
                 trieChanges.push({ key: trieKey, valueHash });
+
+                // Update Hot Cache
+                const cacheKey = Buffer.from(dbKey).toString('hex');
+                this.valueCache.set(cacheKey, change.value);
             } else {
                 const exists = await this.has(change.key);
                 if (exists) sizeDelta--;
 
                 batch.del(dbKey);
                 trieChanges.push({ key: trieKey, valueHash: null });
+
+                // Remove from Hot Cache
+                const cacheKey = Buffer.from(dbKey).toString('hex');
+                this.valueCache.delete(cacheKey);
             }
         }
 
@@ -196,7 +230,8 @@ export class PersistentStateStore implements AsyncStateStore {
 
         await batch.write(options);
 
-        return new PersistentStateStore(this.store, this.clock, newRoot, newVersion, this.trieCache);
+        // Pass the cache to the new instance to maintain hot state across updates
+        return new PersistentStateStore(this.store, this.clock, newRoot, newVersion, this.trieCache, this.valueCache);
     }
 
     private toDbKey(key: StateKey): Uint8Array {

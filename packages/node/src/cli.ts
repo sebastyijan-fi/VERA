@@ -10,6 +10,8 @@ import { loadConfig } from './config.js';
 import { compile } from './commands/compile.js';
 import { repl } from './commands/repl.js';
 import { verify } from './commands/verify.js';
+import { notarize } from './commands/notarize.js';
+import { setupTxCommands } from './commands/tx.js';
 import fs from 'node:fs';
 
 const program = new Command();
@@ -26,6 +28,7 @@ program
     .option('-p, --port <number>', 'Port to listen on')
     .option('--peer <address>', 'Initial peer to connect to')
     .option('--data <path>', 'Path to data directory')
+    .option('--contract <path>', 'Path to compiled contract (.vir.json)')
     .action(async (options) => {
         consola.info('Starting VERA Full Node...');
 
@@ -35,7 +38,9 @@ program
         // Override with CLI options
         if (options.port) config.port = parseInt(options.port);
         if (options.data) config.dataDir = options.data;
+        if (options.data) config.dataDir = options.data;
         if (options.peer) config.peers.push(options.peer);
+        if (options.contract) config.programPath = options.contract;
 
         try {
             const node = new FullNode(config);
@@ -84,10 +89,20 @@ program
     });
 
 program
+    .command('notarize <file>')
+    .description('Cryptographically sign a file (Proof of Existence)')
+    .option('-s, --secret <hex>', 'Private key (hex)')
+    .option('-o, --out <path>', 'Output proof file path')
+    .action(async (file, options) => {
+        await notarize({ file, ...options });
+    });
+
+program
     .command('verify')
-    .description('Verify an audit bundle or execution proof')
+    .description('Verify a file proof or audit bundle')
+    .option('-f, --file <path>', 'File to verify')
+    .option('-p, --proof <path>', 'Proof file (JSON)')
     .option('-b, --bundle <file>', 'Path to audit bundle')
-    .option('-p, --proof <file>', 'Path to execution proof')
     .option('-r, --root <hex>', 'Expected state root (hex)')
     .action(async (options) => {
         await verify(options);
@@ -115,5 +130,8 @@ dataDir = "./data"
         fs.writeFileSync('vera.config.toml', exampleConfig);
         consola.success('Created vera.config.toml');
     });
+
+// Transaction commands
+setupTxCommands(program);
 
 program.parse();

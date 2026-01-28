@@ -29,3 +29,15 @@ export { AppendOnlyStore, type AppendOnlyStoreOptions } from './append.js';
 // Binary commit log and snapshots
 export { CommitLog, type CommitEntry, type CommitLogOptions } from './commitlog.js';
 export { BinarySnapshotManager, type SnapshotHeader, type SnapshotEntry, type BinarySnapshotOptions } from './binarysnapshot.js';
+
+// State diff compression
+export {
+    type StateDiff,
+    type StateOp,
+    type Checkpoint,
+    computeDiff,
+    applyDiff,
+    cloneState,
+    serializeDiff,
+    deserializeDiff,
+} from './state_diff.js';

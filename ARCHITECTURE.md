@@ -7,7 +7,7 @@ VERA (Verifiable Execution & Registry Architecture) follows a modular, decoupled
 ```mermaid
 graph TD
     CLI["@vera/node (CLI)"] --> Node["@vera/node (FullNode)"]
-    Node --> Net["@vera/net (P2P)"]
+    Node --> Net["@vera/net (P2P/Sync)"]
     Node --> Store["@vera/store (Storage)"]
     Node --> Engine["@vera/engine (Execution)"]
     
@@ -16,58 +16,79 @@ graph TD
     Store --> Core
     
     Engine --> DSL["@vera/dsl (Compiler)"]
+    
+    subgraph "Networking Layer"
+    Net
+    end
+    
+    subgraph "Execution Layer"
+    Engine
+    DSL
+    end
+    
+    subgraph "Storage Layer"
+    Store
+    end
 ```
 
 ### 1. @vera/core (The Foundation)
 
 - **Types**: Shared data structures (Blocks, Transactions, StateRoots).
-- **Crypto**: Ed25519 signatures, batch verification.
+- **Crypto**: Ed25519 signatures, batch verification (1.1).
 - **Encoding**: CBOR-based binary format.
-- **Merkle**: Sparse Merkle Trie (SMT) for state commitment.
+- **Merkle**: Sparse Merkle Trie (SMT) for state commitment (1.2).
 
 ### 2. @vera/engine (Execution Layer)
 
 - **Transaction State Processor (TSP)**: Deterministic state transition function.
 - **VM**: Register-based VM for executing VERA programs.
-- **Parallel Executor**: Optimistic parallel execution with Read-After-Write (RAW) conflict detection.
-- **Worker Pool**: Multi-core scalability for transaction processing.
+- **Parallel Executor**: Optimistic parallel execution with Read-After-Write (RAW) conflict detection (4.1/4.2).
+- **Worker Pool**: Isolated `node:worker_threads` for multi-core transaction processing (4.4).
+- **Access Lists**: Optimistic state pre-fetching (C.1).
 
 ### 3. @vera/net (Networking Layer)
 
-- **P2P Transport**: Node.js `net` based peer-to-peer communication.
-- **Binary Protocol**: Compact CBOR messaging.
-- **Sync Manager**: Block synchronization and peer discovery.
+- **P2P Transport**: Node.js `net` based peer-to-peer communication (5.2).
+- **Binary Protocol**: Compact Tuple-based CBOR messaging (C.3).
+- **Chain Sync**: Headers-First synchronization strategy (C.3).
+- **Erasure Coding**: Reed-Solomon based block chunk propagation for bandwidth optimization (C.2).
 
 ### 4. @vera/store (Storage Layer)
 
-- **CommitLog**: Append-only binary log for blocks and state changes.
-- **WAL**: Write-Ahead Log for crash-safe state updates.
-- **AppendOnlyStore**: Optimized foundation for high-performance state storage.
+- **AppendOnlyStore**: "Firewood"-style storage with Versioned State (2.1).
+- **CommitLog**: Append-only binary log for blocks and state roots (2.2).
+- **WAL**: Write-Ahead Log for crash consistency.
+- **Hot/Cold Separation**: LRU caching for active state (B.3).
 
 ### 5. @vera/node (Integration)
 
 - **FullNode**: Orchestrates all components.
-- **CLI**: Entry point for running and managing the node.
-- **Tools**: Includes `compile`, `repl`, and `verify` commands integrated into a single binary.
+- **CLI**: Unified entry point (`vera run`, `vera status`).
+- **Configuration**: TOML-based configuration system.
 
 ## Block Lifecycle
 
-1. **Reception**: A block is received via `@vera/net` (Sync or Gossip).
+1. **Reception**:
+   - A block is received via `@vera/net`.
+   - If large, it may be reconstructed from Dispersed chunks (Erasure Coding).
 2. **Verification**:
    - Signatures are batch-verified via `@vera/core`.
-   - Block structure and parent hash validated.
+   - Headers validated (PoW/PoS/Authority).
 3. **Execution**:
-   - Transactions are fed into `@vera/engine`'s Parallel Executor.
-   - Conflicts are detected; serial fallback is used for dependent txs.
+   - Transactions are scheduled by `@vera/engine`'s Parallel Executor.
+   - Workers execute optimistically; scheduler resolves conflicts.
 4. **State Update**:
-   - Final state changes are applied to `@vera/store`.
-   - Commit log is appended.
-5. **Gossip**: Block is relayed to other peers.
+   - State deltas applied to `@vera/store` (AppendOnlyStore).
+   - Commit log is appended with new State Root.
+5. **Gossip**: Block (or chunks) relayed to other peers.
 
-## Current Maturity & "Cruft"
+## Current Maturity
 
 | Component | Status | Note |
 | :-------- | :----- | :--- |
-| `legacy/` | 🗑️ Cruft | Archived legacy code (old CLI/SDK). |
-| `packages/ordering` | ✅ Stable | Ordering and sequencing of transactions. |
-| `packages/dsl` | ✅ Stable | Core of the programmability. |
+| `legacy/` | 🗑️ Cruft | Archived legacy code. |
+| `packages/ordering` | ✅ Stable | Ordering/Sequencing logic. |
+| `packages/dsl` | ✅ Stable | Core language/compiler. |
+| `packages/engine` | 🚀 Beta | Parallel execution active. |
+| `packages/net` | 🚀 Beta | Binary Proto + EC active. |
+| `packages/store` | 🚀 Beta | WAL + VSS active. |

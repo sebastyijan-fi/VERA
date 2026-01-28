@@ -12,6 +12,11 @@ export interface NodeConfig {
     peers: string[];
     networkId: string;
     genesisHash: string;
+    validators: { id: string; publicKey: string; votingPower: number }[];
+    secretKey?: string;
+    rpcPort?: number;
+    rpcEnabled?: boolean;
+    programPath?: string;
 }
 
 export const DEFAULT_CONFIG: NodeConfig = {
@@ -19,7 +24,10 @@ export const DEFAULT_CONFIG: NodeConfig = {
     dataDir: './data',
     peers: [],
     networkId: 'vera-mainnet',
-    genesisHash: '0x0000000000000000000000000000000000000000000000000000000000000000'
+    genesisHash: '0x0000000000000000000000000000000000000000000000000000000000000000',
+    validators: [],
+    rpcPort: 8545,
+    rpcEnabled: true
 };
 
 /**
@@ -43,6 +51,9 @@ export function loadConfig(configPath?: string): NodeConfig {
         dataDir: process.env['VERA_DATA_DIR'] || fileConfig.dataDir || DEFAULT_CONFIG.dataDir,
         peers: fileConfig.peers || DEFAULT_CONFIG.peers,
         networkId: process.env['VERA_NETWORK_ID'] || fileConfig.networkId || DEFAULT_CONFIG.networkId,
-        genesisHash: process.env['VERA_GENESIS_HASH'] || fileConfig.genesisHash || DEFAULT_CONFIG.genesisHash
+        genesisHash: process.env['VERA_GENESIS_HASH'] || fileConfig.genesisHash || DEFAULT_CONFIG.genesisHash,
+        validators: fileConfig.validators || DEFAULT_CONFIG.validators,
+        secretKey: process.env['VERA_SECRET'] || fileConfig.secretKey,
+        programPath: process.env['VERA_CONTRACT'] || fileConfig.programPath
     };
 }

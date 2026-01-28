@@ -1,9 +1,9 @@
 {
     "extends": "../../tsconfig.base.json",
     "compilerOptions": {
-        "composite": true,
         "outDir": "./dist",
-        "rootDir": "./src"
+        "rootDir": "./src",
+        "composite": true
     },
     "include": [
         "src/**/*"
@@ -11,5 +11,31 @@
     "exclude": [
         "node_modules",
         "dist"
+    ],
+    "references": [
+        {
+            "path": "../core"
+        },
+        {
+            "path": "../consensus"
+        },
+        {
+            "path": "../dsl"
+        },
+        {
+            "path": "../engine"
+        },
+        {
+            "path": "../net"
+        },
+        {
+            "path": "../ordering"
+        },
+        {
+            "path": "../rpc"
+        },
+        {
+            "path": "../store"
+        }
     ]
 }

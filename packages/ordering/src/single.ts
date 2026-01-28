@@ -58,6 +58,14 @@ export interface SingleSequencerConfig {
     maxBatchSize?: number | undefined;
     /** Maximum transactions in submission queue (default: 5000) */
     maxSubmissionQueueSize?: number | undefined;
+
+    // Backpressure Configuration
+    /** Maximum mempool size before rejecting transactions (default: 10000) */
+    maxMempoolSize?: number | undefined;
+    /** Maximum execution backlog before rejecting transactions (default: 5000) */
+    maxExecutionBacklog?: number | undefined;
+    /** Maximum transaction size in bytes (default: 1MB) */
+    maxTxSize?: number | undefined;
 }
 
 // ============================================================================
@@ -94,10 +102,10 @@ export class SingleSequencer implements Sequencer {
     private readonly maxSubmissionQueueSize: number;
     private flushTimer: NodeJS.Timeout | null = null;
 
-    // Backpressure Config (Hardcoded for now)
-    private readonly MAX_MEMPOOL_SIZE = 10000;
-    private readonly MAX_EXECUTION_BACKLOG = 5000;
-    private readonly MAX_TX_SIZE = 1 * 1024 * 1024; // 1MB
+    // Backpressure Config (Configurable)
+    private readonly maxMempoolSize: number;
+    private readonly maxExecutionBacklog: number;
+    private readonly maxTxSize: number;
 
     constructor(config: SingleSequencerConfig = {}) {
         this.id = config.id ?? 'single-sequencer';
@@ -110,6 +118,12 @@ export class SingleSequencer implements Sequencer {
         this.batchTimeout = config.batchTimeout ?? 2;
         this.maxBatchSize = config.maxBatchSize ?? 1000;
         this.maxSubmissionQueueSize = config.maxSubmissionQueueSize ?? 5000;
+
+        // Backpressure configuration
+        this.maxMempoolSize = config.maxMempoolSize ?? 10000;
+        this.maxExecutionBacklog = config.maxExecutionBacklog ?? 5000;
+        this.maxTxSize = config.maxTxSize ?? 1 * 1024 * 1024; // 1MB default
+
         if (config.store) {
             this.store = config.store;
             this.log = new TransactionLog(config.store);
@@ -253,12 +267,12 @@ export class SingleSequencer implements Sequencer {
         const toSequence: { tx: RawTransaction; index: number }[] = [];
 
         // Backpressure Check
-        if (this.pool.size + txs.length > this.MAX_MEMPOOL_SIZE) {
+        if (this.pool.size + txs.length > this.maxMempoolSize) {
             return txs.map(tx => ({ accepted: false, hash: tx.hash, error: 'Backpressure: Mempool full' }));
         }
 
         const currentBacklog = Number(this.nextSequence - 1n) - this.finality.finalizedCount;
-        if (currentBacklog > this.MAX_EXECUTION_BACKLOG) {
+        if (currentBacklog > this.maxExecutionBacklog) {
             return txs.map(tx => ({ accepted: false, hash: tx.hash, error: `Backpressure: Execution backlog too high (${currentBacklog})` }));
         }
 
@@ -395,6 +409,52 @@ export class SingleSequencer implements Sequencer {
         this.nextSequence = 1n;
     }
 
+    // ========================================================================
+    // Backpressure Monitoring
+    // ========================================================================
+
+    /**
+     * Get current queue depth (pending transactions in mempool)
+     */
+    getQueueDepth(): number {
+        return this.pool.size;
+    }
+
+    /**
+     * Get current execution backlog (sequenced but not finalized)
+     */
+    getExecutionBacklog(): number {
+        return Number(this.nextSequence - 1n) - this.finality.finalizedCount;
+    }
+
+    /**
+     * Get comprehensive backpressure status
+     */
+    getBackpressureStatus(): {
+        queueDepth: number;
+        queueLimit: number;
+        queueUtilization: number;
+        executionBacklog: number;
+        backlogLimit: number;
+        backlogUtilization: number;
+        isUnderPressure: boolean;
+    } {
+        const queueDepth = this.getQueueDepth();
+        const executionBacklog = this.getExecutionBacklog();
+        const queueUtilization = queueDepth / this.maxMempoolSize;
+        const backlogUtilization = executionBacklog / this.maxExecutionBacklog;
+
+        return {
+            queueDepth,
+            queueLimit: this.maxMempoolSize,
+            queueUtilization,
+            executionBacklog,
+            backlogLimit: this.maxExecutionBacklog,
+            backlogUtilization,
+            isUnderPressure: queueUtilization > 0.8 || backlogUtilization > 0.8
+        };
+    }
+
     private async sequenceBatch(txs: RawTransaction[], dirtyNonces: Set<string>): Promise<OrderedTransaction[]> {
         const orderedList: OrderedTransaction[] = [];
 
@@ -518,8 +578,8 @@ export class SingleSequencer implements Sequencer {
             const senderKey = bytesToHex(tx.sender, false);
 
             // 0. Size Check
-            if (tx.canonicalTxBytes.length > this.MAX_TX_SIZE) {
-                results[i] = { accepted: false, hash: tx.hash, error: `Transaction too large: ${tx.canonicalTxBytes.length} > ${this.MAX_TX_SIZE}` };
+            if (tx.canonicalTxBytes.length > this.maxTxSize) {
+                results[i] = { accepted: false, hash: tx.hash, error: `Transaction too large: ${tx.canonicalTxBytes.length} > ${this.maxTxSize}` };
                 continue;
             }
 
@@ -539,7 +599,7 @@ export class SingleSequencer implements Sequencer {
             // 2. Signature Cache Check (Precedence: Proof of identity before state check)
             if (this.signatureCache.get(hashHex) === true) {
                 // Signature is known good. Safe to check nonces.
-                const currentNonce = batchNonces.get(senderKey) ?? (this.nonces.get(senderKey) ?? 0n);
+                const currentNonce = batchNonces.get(senderKey) ?? (this.nonces.get(senderKey) ?? -1n);
 
                 if (tx.nonce <= currentNonce) {
                     results[i] = { accepted: false, hash: tx.hash, error: 'Nonce too low' };
@@ -590,7 +650,7 @@ export class SingleSequencer implements Sequencer {
             for (const v of toVerify) {
                 const hashHex = bytesToHex(v.tx.hash, false);
                 const senderKey = bytesToHex(v.tx.sender, false);
-                const currentNonce = batchNonces.get(senderKey) ?? (this.nonces.get(senderKey) ?? 0n);
+                const currentNonce = batchNonces.get(senderKey) ?? (this.nonces.get(senderKey) ?? -1n);
 
                 if (v.tx.nonce <= currentNonce) {
                     results[v.index] = { accepted: false, hash: v.tx.hash, error: 'Nonce too low' };
@@ -631,7 +691,7 @@ export class SingleSequencer implements Sequencer {
                 // Signature is GOOD. Now check nonces.
                 const hashHex = bytesToHex(v.tx.hash, false);
                 const senderKey = bytesToHex(v.tx.sender, false);
-                const currentNonce = batchNonces.get(senderKey) ?? (this.nonces.get(senderKey) ?? 0n);
+                const currentNonce = batchNonces.get(senderKey) ?? (this.nonces.get(senderKey) ?? -1n);
 
                 if (v.tx.nonce <= currentNonce) {
                     results[v.index] = { accepted: false, hash: v.tx.hash, error: 'Nonce too low' };

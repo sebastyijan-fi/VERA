@@ -20,7 +20,13 @@ import {
     deriveStateId,
     hexToBytes32,
     type StateChange,
+    type AsyncStateStore,
 } from '@vera/core';
+
+export interface PrefetchEntry {
+    entityType: string;
+    keys: string[]; // key strings (e.g. "i:123")
+}
 
 // ============================================================================
 // Execution Result
@@ -79,6 +85,8 @@ export interface ProcessorOptions {
     enableAudit?: boolean;
     /** Initial state */
     initialState?: Map<string, Map<string, Value>>;
+    /** Persistent backing store for state loading */
+    backingStore?: AsyncStateStore;
 }
 
 // ============================================================================
@@ -99,7 +107,11 @@ export class TransactionStateProcessor {
             gasLimit: options.gasLimit ?? 1_000_000n,
             enableAudit: options.enableAudit ?? false,
             initialState: options.initialState ?? new Map(),
-        };
+            backingStore: options.backingStore,
+        } as any; // Cast needed because backingStore is optional but Required<T> makes it required??
+        // Wait, Required<T> makes all properties required. backingStore | undefined is still required key.
+        // I'll handle typing gracefully.
+
         // Initialize persistent state
         this.state = this.cloneState(this.options.initialState);
     }
@@ -117,7 +129,7 @@ export class TransactionStateProcessor {
         // Set up components
         const gas = new GasMeter(this.options.gasLimit);
         // Use persistent state as backing store
-        const state = new StateJournal(this.state);
+        const state = new StateJournal(this.state, this.options.backingStore);
         const events = new EventEmitter();
         const audit = this.options.enableAudit ? new AuditLogger() : undefined;
         const shouldCommit = execOptions?.commit ?? true;
@@ -252,6 +264,43 @@ export class TransactionStateProcessor {
                 this.state.get(entry.entityType)?.delete(entry.key);
             }
         }
+    }
+
+    /**
+     * Prefetches state for access list (warming the cache)
+     */
+    async prefetch(accessList: PrefetchEntry[]): Promise<void> {
+        if (!this.options.backingStore) return;
+
+        const promises: Promise<void>[] = [];
+
+        for (const entry of accessList) {
+            let entityMap = this.state.get(entry.entityType);
+            if (!entityMap) {
+                entityMap = new Map();
+                this.state.set(entry.entityType, entityMap);
+            }
+            const map = entityMap!;
+
+            for (const keyStr of entry.keys) {
+                if (map.has(keyStr)) continue; // Already in cache
+
+                promises.push((async () => {
+                    const id = deriveStateId(keyStr);
+                    const stateKey: StateKey = {
+                        namespace: entry.entityType,
+                        id: id as any,
+                    };
+                    const val = await this.options.backingStore!.get(stateKey);
+                    if (val) {
+                        const decoded = restoreFromDecoding(val.data);
+                        map.set(keyStr, decoded);
+                    }
+                })());
+            }
+        }
+
+        await Promise.all(promises);
     }
 
     /**

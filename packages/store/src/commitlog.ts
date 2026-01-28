@@ -13,6 +13,7 @@
 
 import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
+import * as path from 'path';
 import { createHash } from 'crypto';
 import { encode, decode } from 'cbor-x';
 
@@ -91,6 +92,10 @@ export class CommitLog {
         this.indexCache.clear();
         this.latestHeight = -1n;
         this.header = null;
+
+        // Ensure parent directory exists
+        const dir = path.dirname(this.options.path);
+        await fs.mkdir(dir, { recursive: true });
 
         try {
             const stats = await fs.stat(this.options.path);
